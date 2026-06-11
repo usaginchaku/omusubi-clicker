@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>🍙 おむすびくりっかー</title>
-<meta name="description" content="おにぎりを握って米粒を集めるクリッカーゲーム" />
+<meta name="description" content="おむすびを握って米粒を集めるクリッカーゲーム" />
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,7 +20,7 @@ const BUILDINGS = [
   { id: "obaachan", name: "おばあちゃん", desc: "心を込めて握ってくれる", baseCost: 15, cps: 0.5, icon: "👵" },
   { id: "suihanki", name: "炊飯器", desc: "自動でふっくら炊き上げる", baseCost: 100, cps: 4, icon: "🍚" },
   { id: "tanbo", name: "田んぼ", desc: "黄金の稲穂が実る", baseCost: 1100, cps: 12, icon: "🌾" },
-  { id: "conbini", name: "コンビニ", desc: "24時間おにぎり供給", baseCost: 12000, cps: 47, icon: "🏪" },
+  { id: "conbini", name: "コンビニ", desc: "24時間おむすび供給", baseCost: 12000, cps: 47, icon: "🏪" },
   { id: "tonya", name: "米問屋", desc: "米を大量に取り仕切る", baseCost: 130000, cps: 260, icon: "🏯" },
   { id: "robo", name: "田植えロボ", desc: "不眠不休で田植えする", baseCost: 1400000, cps: 1400, icon: "🤖" },
   { id: "jinja", name: "豊穣神社", desc: "五穀豊穣のご利益", baseCost: 20000000, cps: 7800, icon: "⛩️" },
@@ -77,22 +77,22 @@ const SKINS = [
     riceA: "#e8d9bd", riceB: "#cdb88f", edge: "#b09b72", speck: "#8d7548", nori: "#2d4434", extra: null,
   },
   {
-    id: "yaki", name: "焼きおにぎり", cost: 2000000, ability: "施設の価格 -5%",
+    id: "yaki", name: "焼きおむすび", cost: 2000000, ability: "施設の価格 -5%",
     riceA: "#e8c27a", riceB: "#c98f3f", edge: "#a06d28", speck: "#8a5a1e", nori: null, extra: "yaki",
   },
   {
-    id: "sekihan", name: "赤飯", cost: 10000000, ability: "金のおにぎり出現 +25%",
+    id: "sekihan", name: "赤飯", cost: 10000000, ability: "金のおむすび出現 +25%",
     riceA: "#f2dede", riceB: "#dfb6b6", edge: "#c79090", speck: "#b76e6e", nori: "#2d4434", extra: "sekihan",
   },
   {
-    id: "gold", name: "黄金おにぎり", cost: 100000000, ability: "クリック力&毎秒生産 +15%",
+    id: "gold", name: "黄金おむすび", cost: 100000000, ability: "クリック力&毎秒生産 +15%",
     riceA: "#fff3c4", riceB: "#ffd766", edge: "#e0a92e", speck: "#d49a1a", nori: "#5c4a12", extra: "gold",
   },
 ];
 
 // ---------- 実績 ----------
 const ACHIEVEMENTS = [
-  { id: "first", name: "はじめての一握り", desc: "おにぎりを1回握る", cond: (s) => s.clicks >= 1 },
+  { id: "first", name: "はじめての一握り", desc: "おむすびを1回握る", cond: (s) => s.clicks >= 1 },
   { id: "c100", name: "握りの修行中", desc: "100回握る", cond: (s) => s.clicks >= 100 },
   { id: "c1000", name: "千回握り達成", desc: "1,000回握る", cond: (s) => s.clicks >= 1000 },
   { id: "c10000", name: "握りの鉄人", desc: "10,000回握る", cond: (s) => s.clicks >= 10000 },
@@ -106,12 +106,12 @@ const ACHIEVEMENTS = [
   { id: "moon1", name: "月の開拓者", desc: "月面水田を所有する", cond: (s) => (s.owned.moon || 0) >= 1 },
   { id: "bodakko", name: "ぼだっこ通", desc: "ぼだっこを入手する", cond: (s) => !!s.upgrades.bodakko },
   { id: "allup", name: "全部のせ", desc: "全グレードアップを入手", cond: (s) => UPGRADES.every((u) => s.upgrades[u.id]) },
-  { id: "gold1", name: "強運の持ち主", desc: "金のおにぎりをクリック", cond: (s) => s.goldenClicks >= 1 },
-  { id: "gold10", name: "豊穣の申し子", desc: "金のおにぎりを10回クリック", cond: (s) => s.goldenClicks >= 10 },
-  { id: "craft1", name: "おむすび屋開店", desc: "工房でおにぎりを握る", cond: (s) => s.crafted >= 1 },
-  { id: "sell100", name: "繁盛店", desc: "おにぎりを100個売る", cond: (s) => s.sold >= 100 },
+  { id: "gold1", name: "強運の持ち主", desc: "金のおむすびをクリック", cond: (s) => s.goldenClicks >= 1 },
+  { id: "gold10", name: "豊穣の申し子", desc: "金のおむすびを10回クリック", cond: (s) => s.goldenClicks >= 10 },
+  { id: "craft1", name: "おむすび屋開店", desc: "工房でおむすびを握る", cond: (s) => s.crafted >= 1 },
+  { id: "sell100", name: "繁盛店", desc: "おむすびを100個売る", cond: (s) => s.sold >= 100 },
   { id: "profit", name: "商売上手", desc: "累計利益100万粒", cond: (s) => s.profit >= 1e6 },
-  { id: "skin1", name: "おしゃれおにぎり", desc: "スキンを購入する", cond: (s) => Object.keys(s.skinsOwned).length >= 2 },
+  { id: "skin1", name: "おしゃれおむすび", desc: "スキンを購入する", cond: (s) => Object.keys(s.skinsOwned).length >= 2 },
   { id: "farmer5", name: "村いちばんの大地主", desc: "契約農家を5軒", cond: (s) => s.farmers >= 5 },
   { id: "hidden", name: "かくし味", desc: "ひみつの実績…", secret: true, cond: (s) => s.secret },
 ];
@@ -131,9 +131,9 @@ function AchIcon({ id, done }) {
           <ellipse cx="20" cy="14" rx="4.5" ry="2.5" transform="rotate(25 20 14)" />
           <ellipse cx="16" cy="20" rx="4.5" ry="2.5" />
         </g>);
-      case "c1000": // おにぎり
+      case "c1000": // おむすび
         return <path d="M16 8 L24 21 Q24 23 21.5 23.5 Q16 25 10.5 23.5 Q8 23 8 21 Z" fill={fg} />;
-      case "c10000": // おにぎり+星
+      case "c10000": // おむすび+星
         return (<g>
           <path d="M16 9 L23 20 Q23 22 21 22.5 Q16 24 11 22.5 Q9 22 9 20 Z" fill={fg} />
           <path d="M23 8 l1 2 2 .3 -1.5 1.5 .4 2 -1.9 -1 -1.9 1 .4 -2 -1.5 -1.5 2 -.3 z" fill={done ? "#fff" : fg} />
@@ -186,9 +186,9 @@ function AchIcon({ id, done }) {
         return (<g fill={fg}>
           <path d="M16 7 L18 13 L24 13 L19 17 L21 24 L16 19.5 L11 24 L13 17 L8 13 L14 13 Z" />
         </g>);
-      case "gold1": // 金おにぎり
+      case "gold1": // 金おむすび
         return <path d="M16 8 L24 21 Q24 23 21.5 23.5 Q16 25 10.5 23.5 Q8 23 8 21 Z" fill={done ? "#ffce3d" : fg} stroke={done ? "#b8860b" : "none"} strokeWidth="1" />;
-      case "gold10": // 金おにぎり+キラ
+      case "gold10": // 金おむすび+キラ
         return (<g>
           <path d="M16 10 L23 21 Q23 22.5 21 23 Q16 24.5 11 23 Q9 22.5 9 21 Z" fill={done ? "#ffce3d" : fg} />
           <path d="M7 9 l.8 1.8 1.8 .8 -1.8 .8 -.8 1.8 -.8 -1.8 -1.8 -.8 1.8 -.8 z" fill={done ? "#fff" : fg} />
@@ -464,7 +464,7 @@ function OnigiriClicker() {
     return () => clearInterval(t);
   }, [frenzy > 0]);
 
-  // 金のおにぎり出現(赤飯スキンで間隔短縮)
+  // 金のおむすび出現(赤飯スキンで間隔短縮)
   useEffect(() => {
     let timer;
     const schedule = () => {
@@ -629,7 +629,7 @@ function OnigiriClicker() {
     setSold((s) => s + item.count);
     setProfit((p) => p + price);
     setInventory((inv) => inv.filter((x) => !(x.fid === item.fid && x.bid === item.bid)));
-    pushToast(`💰 ${f.name}おにぎり×${item.count} を ${fmt(price)} 粒で売却!`);
+    pushToast(`💰 ${f.name}おむすび×${item.count} を ${fmt(price)} 粒で売却!`);
   };
 
   const hireFarmer = () => {
@@ -1006,7 +1006,7 @@ function OnigiriClicker() {
                   ))}
                 </>
               )}
-              <div className="section-label">▼ 生産施設{skinBuildingMult < 1 ? "(焼きおにぎり割引中)" : ""}</div>
+              <div className="section-label">▼ 生産施設{skinBuildingMult < 1 ? "(焼きおむすび割引中)" : ""}</div>
               {BUILDINGS.map((b, i) => {
                 const n = owned[b.id] || 0;
                 const cost = buildingCost(b, n);
@@ -1229,7 +1229,7 @@ function OnigiriClicker() {
 
       {golden && (
         <button className="golden" style={{ left: `${golden.x}%`, top: `${golden.y}%` }}
-          onClick={clickGolden} aria-label="金のおにぎり">
+          onClick={clickGolden} aria-label="金のおむすび">
           🍙
         </button>
       )}
