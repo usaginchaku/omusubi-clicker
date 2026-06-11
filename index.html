@@ -1,0 +1,1250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🍙 おむすびくりっかー</title>
+<meta name="description" content="おにぎりを握って米粒を集めるクリッカーゲーム" />
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>body { margin: 0; background: #1a2433; }</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ---------- 生産施設 ----------
+const BUILDINGS = [
+  { id: "obaachan", name: "おばあちゃん", desc: "心を込めて握ってくれる", baseCost: 15, cps: 0.5, icon: "👵" },
+  { id: "suihanki", name: "炊飯器", desc: "自動でふっくら炊き上げる", baseCost: 100, cps: 4, icon: "🍚" },
+  { id: "tanbo", name: "田んぼ", desc: "黄金の稲穂が実る", baseCost: 1100, cps: 12, icon: "🌾" },
+  { id: "conbini", name: "コンビニ", desc: "24時間おにぎり供給", baseCost: 12000, cps: 47, icon: "🏪" },
+  { id: "tonya", name: "米問屋", desc: "米を大量に取り仕切る", baseCost: 130000, cps: 260, icon: "🏯" },
+  { id: "robo", name: "田植えロボ", desc: "不眠不休で田植えする", baseCost: 1400000, cps: 1400, icon: "🤖" },
+  { id: "jinja", name: "豊穣神社", desc: "五穀豊穣のご利益", baseCost: 20000000, cps: 7800, icon: "⛩️" },
+  { id: "moon", name: "月面水田", desc: "月でも米は育つらしい", baseCost: 330000000, cps: 44000, icon: "🌕" },
+];
+
+// ---------- クリック強化 ----------
+const UPGRADES = [
+  { id: "shio", name: "塩むすび", desc: "クリック力 ×2", cost: 100, mult: 2, icon: "🧂" },
+  { id: "ume", name: "梅干し", desc: "クリック力 ×2", cost: 1000, mult: 2, icon: "🔴" },
+  { id: "sake", name: "焼き鮭", desc: "クリック力 ×2", cost: 10000, mult: 2, icon: "🐟" },
+  { id: "mentai", name: "明太子", desc: "クリック力 ×2", cost: 100000, mult: 2, icon: "🌶️" },
+  { id: "tunamayo", name: "ツナマヨ", desc: "クリック力 ×2", cost: 1000000, mult: 2, icon: "🥫" },
+  { id: "gold_nori", name: "黄金の海苔", desc: "クリック力 ×2", cost: 10000000, mult: 2, icon: "✨" },
+  { id: "bodakko", name: "ぼだっこ", desc: "秋田が誇る塩っぱい鮭。クリック力 ×3", cost: 77000000, mult: 3, icon: "🧡" },
+];
+
+// ---------- 工房:具材 ----------
+const FILLINGS = [
+  { id: "ume_f", name: "梅", icon: "🔴", buyBase: 300, valBase: 800 },
+  { id: "konbu_f", name: "昆布", icon: "🟫", buyBase: 400, valBase: 1000 },
+  { id: "sake_f", name: "鮭", icon: "🐟", buyBase: 500, valBase: 1200 },
+  { id: "tuna_f", name: "ツナマヨ", icon: "🥫", buyBase: 650, valBase: 1500 },
+  { id: "mentai_f", name: "明太子", icon: "🌶️", buyBase: 1000, valBase: 2200 },
+  { id: "bodakko_f", name: "ぼだっこ", icon: "🧡", buyBase: 2400, valBase: 5000 },
+];
+
+// ---------- 工房:ブレンド米 ----------
+const BRANDS = [
+  { id: "blend", name: "標準ブレンド米", premium: 0, mult: 1.0 },
+  { id: "koshi", name: "コシヒカリ", premium: 800, mult: 1.3 },
+  { id: "akita", name: "あきたこまち", premium: 1500, mult: 1.5 },
+  { id: "yume", name: "ゆめぴりか", premium: 3000, mult: 1.8 },
+  { id: "ryu", name: "龍の瞳", premium: 8000, mult: 2.4 },
+];
+
+const RICE_PER_ONIGIRI = 2500;
+const FARMER_BASE_COST = 50000;
+const farmerCost = (n) => Math.ceil(FARMER_BASE_COST * Math.pow(1.6, n));
+const farmerDiscount = (n) => Math.max(0.5, 1 - n * 0.03);
+
+// ---------- スキン(能力つき) ----------
+const SKINS = [
+  {
+    id: "plain", name: "プレーン", cost: 0, ability: "能力なし。素朴がいちばん",
+    riceA: "#ffffff", riceB: "#efe8d8", edge: "#ded5c0", speck: "#e9e1cf", nori: "#2d4434", extra: null,
+  },
+  {
+    id: "yukari", name: "ゆかり", cost: 50000, ability: "クリック力 +15%",
+    riceA: "#f3e6f5", riceB: "#dcc3e3", edge: "#c5a8cf", speck: "#9b59b6", nori: "#2d4434", extra: "yukari",
+  },
+  {
+    id: "genmai", name: "玄米", cost: 300000, ability: "毎秒生産 +10%",
+    riceA: "#e8d9bd", riceB: "#cdb88f", edge: "#b09b72", speck: "#8d7548", nori: "#2d4434", extra: null,
+  },
+  {
+    id: "yaki", name: "焼きおにぎり", cost: 2000000, ability: "施設の価格 -5%",
+    riceA: "#e8c27a", riceB: "#c98f3f", edge: "#a06d28", speck: "#8a5a1e", nori: null, extra: "yaki",
+  },
+  {
+    id: "sekihan", name: "赤飯", cost: 10000000, ability: "金のおにぎり出現 +25%",
+    riceA: "#f2dede", riceB: "#dfb6b6", edge: "#c79090", speck: "#b76e6e", nori: "#2d4434", extra: "sekihan",
+  },
+  {
+    id: "gold", name: "黄金おにぎり", cost: 100000000, ability: "クリック力&毎秒生産 +15%",
+    riceA: "#fff3c4", riceB: "#ffd766", edge: "#e0a92e", speck: "#d49a1a", nori: "#5c4a12", extra: "gold",
+  },
+];
+
+// ---------- 実績 ----------
+const ACHIEVEMENTS = [
+  { id: "first", name: "はじめての一握り", desc: "おにぎりを1回握る", cond: (s) => s.clicks >= 1 },
+  { id: "c100", name: "握りの修行中", desc: "100回握る", cond: (s) => s.clicks >= 100 },
+  { id: "c1000", name: "千回握り達成", desc: "1,000回握る", cond: (s) => s.clicks >= 1000 },
+  { id: "c10000", name: "握りの鉄人", desc: "10,000回握る", cond: (s) => s.clicks >= 10000 },
+  { id: "t1man", name: "米粒長者", desc: "累計1万粒", cond: (s) => s.totalRice >= 1e4 },
+  { id: "t100man", name: "米百万石", desc: "累計100万粒", cond: (s) => s.totalRice >= 1e6 },
+  { id: "t1oku", name: "億り米", desc: "累計1億粒", cond: (s) => s.totalRice >= 1e8 },
+  { id: "t1cho", name: "米の王", desc: "累計1兆粒", cond: (s) => s.totalRice >= 1e12 },
+  { id: "baachan10", name: "おばあちゃん大集合", desc: "おばあちゃんを10人", cond: (s) => (s.owned.obaachan || 0) >= 10 },
+  { id: "tanbo10", name: "庄屋さま", desc: "田んぼを10枚", cond: (s) => (s.owned.tanbo || 0) >= 10 },
+  { id: "conbini10", name: "フランチャイズ王", desc: "コンビニを10店舗", cond: (s) => (s.owned.conbini || 0) >= 10 },
+  { id: "moon1", name: "月の開拓者", desc: "月面水田を所有する", cond: (s) => (s.owned.moon || 0) >= 1 },
+  { id: "bodakko", name: "ぼだっこ通", desc: "ぼだっこを入手する", cond: (s) => !!s.upgrades.bodakko },
+  { id: "allup", name: "全部のせ", desc: "全グレードアップを入手", cond: (s) => UPGRADES.every((u) => s.upgrades[u.id]) },
+  { id: "gold1", name: "強運の持ち主", desc: "金のおにぎりをクリック", cond: (s) => s.goldenClicks >= 1 },
+  { id: "gold10", name: "豊穣の申し子", desc: "金のおにぎりを10回クリック", cond: (s) => s.goldenClicks >= 10 },
+  { id: "craft1", name: "おむすび屋開店", desc: "工房でおにぎりを握る", cond: (s) => s.crafted >= 1 },
+  { id: "sell100", name: "繁盛店", desc: "おにぎりを100個売る", cond: (s) => s.sold >= 100 },
+  { id: "profit", name: "商売上手", desc: "累計利益100万粒", cond: (s) => s.profit >= 1e6 },
+  { id: "skin1", name: "おしゃれおにぎり", desc: "スキンを購入する", cond: (s) => Object.keys(s.skinsOwned).length >= 2 },
+  { id: "farmer5", name: "村いちばんの大地主", desc: "契約農家を5軒", cond: (s) => s.farmers >= 5 },
+  { id: "hidden", name: "かくし味", desc: "ひみつの実績…", secret: true, cond: (s) => s.secret },
+];
+
+// ---------- 実績メダルSVG ----------
+function AchIcon({ id, done }) {
+  const ringA = done ? "#ffd97a" : "#4a5a74";
+  const ringB = done ? "#e8a13d" : "#36465f";
+  const fg = done ? "#5c4310" : "#7787a0";
+  const glyph = (() => {
+    switch (id) {
+      case "first": // 米一粒
+        return <ellipse cx="16" cy="16" rx="6" ry="3.4" fill={fg} transform="rotate(-25 16 16)" />;
+      case "c100": // 米三粒
+        return (<g fill={fg}>
+          <ellipse cx="12" cy="13" rx="4.5" ry="2.5" transform="rotate(-30 12 13)" />
+          <ellipse cx="20" cy="14" rx="4.5" ry="2.5" transform="rotate(25 20 14)" />
+          <ellipse cx="16" cy="20" rx="4.5" ry="2.5" />
+        </g>);
+      case "c1000": // おにぎり
+        return <path d="M16 8 L24 21 Q24 23 21.5 23.5 Q16 25 10.5 23.5 Q8 23 8 21 Z" fill={fg} />;
+      case "c10000": // おにぎり+星
+        return (<g>
+          <path d="M16 9 L23 20 Q23 22 21 22.5 Q16 24 11 22.5 Q9 22 9 20 Z" fill={fg} />
+          <path d="M23 8 l1 2 2 .3 -1.5 1.5 .4 2 -1.9 -1 -1.9 1 .4 -2 -1.5 -1.5 2 -.3 z" fill={done ? "#fff" : fg} />
+        </g>);
+      case "t1man": // 小判
+        return (<g>
+          <ellipse cx="16" cy="16" rx="8" ry="5.5" fill={fg} />
+          <ellipse cx="16" cy="16" rx="4.5" ry="2.8" fill="none" stroke={done ? "#ffd97a" : "#36465f"} strokeWidth="1.4" />
+        </g>);
+      case "t100man": // 小判の山
+        return (<g fill={fg}>
+          <ellipse cx="12" cy="19" rx="6.5" ry="3.6" />
+          <ellipse cx="20" cy="17" rx="6.5" ry="3.6" />
+          <ellipse cx="16" cy="13" rx="6.5" ry="3.6" stroke={ringB} strokeWidth="0.8" />
+        </g>);
+      case "t1oku": // 王冠
+        return <path d="M9 21 L8 11 L12.5 15 L16 9 L19.5 15 L24 11 L23 21 Z" fill={fg} />;
+      case "t1cho": // 王冠+宝石
+        return (<g>
+          <path d="M9 21 L8 11 L12.5 15 L16 9 L19.5 15 L24 11 L23 21 Z" fill={fg} />
+          <circle cx="16" cy="17" r="2.2" fill={done ? "#e94f37" : "#5a6a84"} />
+        </g>);
+      case "baachan10": // おばあちゃんの眼鏡
+        return (<g stroke={fg} strokeWidth="2" fill="none">
+          <circle cx="11" cy="16" r="4" />
+          <circle cx="21" cy="16" r="4" />
+          <path d="M15 16 L17 16" />
+        </g>);
+      case "tanbo10": // 稲穂
+        return (<g stroke={fg} strokeWidth="2" fill="none" strokeLinecap="round">
+          <path d="M16 24 L16 10" />
+          <path d="M16 13 Q11 11 10 7" />
+          <path d="M16 16 Q21 14 22 10" />
+          <path d="M16 19 Q12 18 11 14" />
+        </g>);
+      case "conbini10": // 店
+        return (<g fill={fg}>
+          <rect x="9" y="14" width="14" height="9" rx="1" />
+          <path d="M8 14 L24 14 L22 9 L10 9 Z" fill={done ? "#e94f37" : "#5a6a84"} />
+          <rect x="14" y="17" width="4" height="6" fill={done ? "#fff" : "#36465f"} />
+        </g>);
+      case "moon1": // 三日月
+        return <path d="M20 8 A9 9 0 1 0 20 24 A7 7 0 1 1 20 8 Z" fill={fg} />;
+      case "bodakko": // 鮭の切り身
+        return (<g>
+          <path d="M9 16 Q16 9 24 13 Q22 20 13 21 Q10 20 9 16 Z" fill={done ? "#e8762d" : fg} />
+          <path d="M12 18 Q16 15 21 15" stroke={done ? "#fff" : "#36465f"} strokeWidth="1.4" fill="none" />
+        </g>);
+      case "allup": // 放射の星
+        return (<g fill={fg}>
+          <path d="M16 7 L18 13 L24 13 L19 17 L21 24 L16 19.5 L11 24 L13 17 L8 13 L14 13 Z" />
+        </g>);
+      case "gold1": // 金おにぎり
+        return <path d="M16 8 L24 21 Q24 23 21.5 23.5 Q16 25 10.5 23.5 Q8 23 8 21 Z" fill={done ? "#ffce3d" : fg} stroke={done ? "#b8860b" : "none"} strokeWidth="1" />;
+      case "gold10": // 金おにぎり+キラ
+        return (<g>
+          <path d="M16 10 L23 21 Q23 22.5 21 23 Q16 24.5 11 23 Q9 22.5 9 21 Z" fill={done ? "#ffce3d" : fg} />
+          <path d="M7 9 l.8 1.8 1.8 .8 -1.8 .8 -.8 1.8 -.8 -1.8 -1.8 -.8 1.8 -.8 z" fill={done ? "#fff" : fg} />
+          <path d="M24 7 l.7 1.5 1.5 .7 -1.5 .7 -.7 1.5 -.7 -1.5 -1.5 -.7 1.5 -.7 z" fill={done ? "#fff" : fg} />
+        </g>);
+      case "craft1": // 握る手(三角を包む)
+        return (<g>
+          <path d="M16 10 L22 20 Q22 21.5 20 22 Q16 23 12 22 Q10 21.5 10 20 Z" fill={fg} />
+          <path d="M7 14 Q10 11 13 13 M25 14 Q22 11 19 13" stroke={fg} strokeWidth="2" fill="none" strokeLinecap="round" />
+        </g>);
+      case "sell100": // のれん
+        return (<g fill={fg}>
+          <rect x="8" y="9" width="16" height="3" rx="1" />
+          <rect x="9" y="12" width="4" height="10" />
+          <rect x="14" y="12" width="4" height="10" />
+          <rect x="19" y="12" width="4" height="10" />
+        </g>);
+      case "profit": // 上昇チャート
+        return (<g stroke={fg} strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 22 L13 17 L17 19 L24 11" />
+          <path d="M19 11 L24 11 L24 16" />
+        </g>);
+      case "skin1": // パレット
+        return (<g>
+          <path d="M16 8 A8 8 0 1 0 16 24 Q19 24 18 21 Q17 18 20 18 L22 18 A8 8 0 0 0 16 8 Z" fill={fg} />
+          <circle cx="12" cy="13" r="1.6" fill={done ? "#9b59b6" : "#36465f"} />
+          <circle cx="17" cy="11" r="1.6" fill={done ? "#e94f37" : "#36465f"} />
+          <circle cx="11" cy="18" r="1.6" fill={done ? "#7ec97e" : "#36465f"} />
+        </g>);
+      case "farmer5": // 麦わら帽子
+        return (<g fill={fg}>
+          <ellipse cx="16" cy="19" rx="10" ry="3.4" />
+          <path d="M10 19 Q10 11 16 11 Q22 11 22 19 Z" />
+          <rect x="10" y="16" width="12" height="2.4" fill={done ? "#e94f37" : "#5a6a84"} />
+        </g>);
+      case "hidden": // ?マーク
+        return (<text x="16" y="22" textAnchor="middle" fontSize="16" fontWeight="bold" fill={fg} fontFamily="sans-serif">?</text>);
+      default:
+        return <circle cx="16" cy="16" r="6" fill={fg} />;
+    }
+  })();
+  return (
+    <svg width="34" height="34" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="15" fill={ringB} />
+      <circle cx="16" cy="16" r="13" fill={done ? "#fdf3d7" : "#2a374c"} stroke={ringA} strokeWidth="2" />
+      {glyph}
+    </svg>
+  );
+}
+
+// 日本式の数値フォーマット(万・億・兆・京)
+function fmt(n) {
+  const neg = n < 0;
+  n = Math.abs(n);
+  let out;
+  if (n < 1e4) out = Math.floor(n).toLocaleString("ja-JP");
+  else {
+    const units = [[1e16, "京"], [1e12, "兆"], [1e8, "億"], [1e4, "万"]];
+    out = Math.floor(n).toLocaleString("ja-JP");
+    for (const [v, u] of units) {
+      if (n >= v) {
+        const x = n / v;
+        out = (x >= 100 ? Math.floor(x) : x.toFixed(x >= 10 ? 1 : 2)) + u;
+        break;
+      }
+    }
+  }
+  return (neg ? "-" : "") + out;
+}
+
+// 生産量:小数点第1位まで
+function fmtCps(n) {
+  if (n >= 1e4) return fmt(n);
+  return n.toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// 相場の増減表示
+function marketPct(f) {
+  const pct = Math.round((f - 1) * 100);
+  if (pct === 0) return <span style={{ color: "#9fb3cc" }}>±0%</span>;
+  return pct > 0 ? (
+    <span style={{ color: "#ff8a7a" }}>▲{pct}%</span>
+  ) : (
+    <span style={{ color: "#7ec97e" }}>▼{Math.abs(pct)}%</span>
+  );
+}
+
+// ---------- 価格計算 ----------
+const fillingBuyPrice = (f, market) => Math.ceil(f.buyBase * (market[f.id] || 1));
+const sellPrice = (f, brand, market, trending) =>
+  Math.ceil(
+    (RICE_PER_ONIGIRI + f.valBase * (market[f.id] || 1) * (trending === f.id ? 2.5 : 1)) *
+      brand.mult
+  );
+const ricePrice = (riceMkt, farmers) =>
+  Math.ceil(RICE_PER_ONIGIRI * riceMkt * farmerDiscount(farmers));
+const brandPremium = (b, brandMkt) => Math.ceil(b.premium * (brandMkt[b.id] || 1));
+const craftCost = (f, b, market, riceMkt, brandMkt, farmers) =>
+  ricePrice(riceMkt, farmers) + brandPremium(b, brandMkt) + fillingBuyPrice(f, market);
+
+// ---------- セーブコード ----------
+const SAVE_PREFIX = "OMSB1|";
+function encodeSave(obj) {
+  return SAVE_PREFIX + btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
+}
+function decodeSave(code) {
+  if (!code.startsWith(SAVE_PREFIX)) throw new Error("bad prefix");
+  return JSON.parse(decodeURIComponent(escape(atob(code.slice(SAVE_PREFIX.length)))));
+}
+
+// ---------- 粒感のあるおむすびSVG ----------
+function OnigiriSVG({ skin }) {
+  const rim = [
+    [100, 21, -5], [82, 28, -40], [118, 28, 40], [68, 42, -50], [132, 42, 50],
+    [56, 62, -55], [144, 62, 55], [45, 84, -60], [155, 84, 60],
+    [36, 106, -65], [164, 106, 65], [31, 128, -75], [169, 128, 75],
+    [38, 148, -85], [162, 148, 85], [56, 160, 80], [144, 160, -80],
+    [78, 167, 88], [122, 167, -88], [100, 169, 90],
+  ];
+  return (
+    <svg width="240" height="240" viewBox="0 0 200 200">
+      <defs>
+        <radialGradient id="riceShine" cx="38%" cy="30%" r="75%">
+          <stop offset="0%" stopColor={skin.riceA} />
+          <stop offset="70%" stopColor={skin.riceA} />
+          <stop offset="100%" stopColor={skin.riceB} />
+        </radialGradient>
+        <filter id="rough" x="-15%" y="-15%" width="130%" height="130%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" seed="7" result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="6" />
+        </filter>
+      </defs>
+      <g filter="url(#rough)">
+        <path
+          d="M100 22 C 116 22 126 32 136 48 L 166 100 C 176 117 178 134 166 146
+             C 150 162 124 170 100 170 C 76 170 50 162 34 146
+             C 22 134 24 117 34 100 L 64 48 C 74 32 84 22 100 22 Z"
+          fill="url(#riceShine)"
+          stroke={skin.edge}
+          strokeWidth="3"
+          strokeLinejoin="round"
+        />
+        {rim.map(([x, y, r], i) => (
+          <ellipse key={i} cx={x} cy={y} rx="6.5" ry="3.4" fill={skin.riceA}
+            stroke={skin.edge} strokeWidth="1.2" transform={`rotate(${r} ${x} ${y})`} />
+        ))}
+      </g>
+      <ellipse cx="72" cy="52" rx="16" ry="9" fill="#ffffff" opacity="0.6" transform="rotate(-32 72 52)" />
+      {[[130, 62, 18], [52, 100, 25], [150, 108, -15], [110, 55, -8], [70, 78, 30], [140, 86, -25], [60, 124, 12], [92, 64, -18]].map(
+        ([x, y, r], i) => (
+          <ellipse key={i} cx={x} cy={y} rx="5.5" ry="2.8" fill={skin.speck} opacity="0.7" transform={`rotate(${r} ${x} ${y})`} />
+        )
+      )}
+      {skin.extra === "yukari" &&
+        [[88, 50, 0], [120, 70, 40], [65, 90, -30], [140, 60, 70], [105, 110, 20], [75, 65, 55], [135, 115, -45]].map(([x, y, r], i) => (
+          <rect key={i} x={x} y={y} width="5" height="2.2" rx="1" fill="#7d3c98" transform={`rotate(${r} ${x} ${y})`} />
+        ))}
+      {skin.extra === "sekihan" &&
+        [[85, 55], [120, 65], [65, 95], [140, 95], [100, 75], [115, 105]].map(([x, y], i) => (
+          <ellipse key={i} cx={x} cy={y} rx="4.5" ry="3.2" fill="#8e3b46" />
+        ))}
+      {skin.extra === "yaki" && (
+        <g stroke="#8a4a12" strokeWidth="5" strokeLinecap="round" opacity="0.65">
+          <path d="M62 60 Q100 50 138 60" fill="none" />
+          <path d="M52 92 Q100 82 148 92" fill="none" />
+          <path d="M50 124 Q100 114 150 124" fill="none" />
+        </g>
+      )}
+      {skin.extra === "gold" &&
+        [[70, 50], [130, 55], [55, 100], [150, 95], [100, 40]].map(([x, y], i) => (
+          <text key={i} x={x} y={y} fontSize="13" opacity="0.9">✦</text>
+        ))}
+      {skin.nori && (
+        <>
+          <path
+            d="M66 122 L 134 122 C 136 122 138 124 138 126 L 138 158
+               C 126 165 112 168 100 168 C 88 168 74 165 62 158
+               L 62 126 C 62 124 64 122 66 122 Z"
+            fill={skin.nori} stroke="#22352a" strokeWidth="2"
+          />
+          <ellipse cx="78" cy="136" rx="9" ry="4" fill="#ffffff" opacity="0.12" transform="rotate(-10 78 136)" />
+        </>
+      )}
+      <circle cx="80" cy="90" r="6.5" fill="#3b3530" />
+      <circle cx="120" cy="90" r="6.5" fill="#3b3530" />
+      <circle cx="82.5" cy="87.5" r="2.4" fill="#ffffff" />
+      <circle cx="122.5" cy="87.5" r="2.4" fill="#ffffff" />
+      <path d="M92 100 Q100 109 108 100" stroke="#3b3530" strokeWidth="3.5" fill="none" strokeLinecap="round" />
+      <ellipse cx="64" cy="101" rx="8" ry="5" fill="#f8b9aa" opacity="0.75" />
+      <ellipse cx="136" cy="101" rx="8" ry="5" fill="#f8b9aa" opacity="0.75" />
+    </svg>
+  );
+}
+
+// ---------- メイン ----------
+function OnigiriClicker() {
+  const [rice, setRice] = useState(0);
+  const [totalRice, setTotalRice] = useState(0);
+  const [clicks, setClicks] = useState(0);
+  const [owned, setOwned] = useState({});
+  const [upgrades, setUpgrades] = useState({});
+  const [goldenClicks, setGoldenClicks] = useState(0);
+  const [unlocked, setUnlocked] = useState({});
+  const [particles, setParticles] = useState([]);
+  const [grains, setGrains] = useState([]);
+  const [squish, setSquish] = useState(false);
+  const [golden, setGolden] = useState(null);
+  const [frenzy, setFrenzy] = useState(0);
+  const [toasts, setToasts] = useState([]);
+  const [tab, setTab] = useState("shop");
+
+  // 工房
+  const [market, setMarket] = useState(() => Object.fromEntries(FILLINGS.map((f) => [f.id, 1])));
+  const [riceMkt, setRiceMkt] = useState(1);
+  const [brandMkt, setBrandMkt] = useState(() => Object.fromEntries(BRANDS.map((b) => [b.id, 1])));
+  const [trending, setTrending] = useState(null);
+  const [selFilling, setSelFilling] = useState(FILLINGS[0].id);
+  const [selBrand, setSelBrand] = useState(BRANDS[0].id);
+  const [inventory, setInventory] = useState([]);
+  const [crafted, setCrafted] = useState(0);
+  const [sold, setSold] = useState(0);
+  const [profit, setProfit] = useState(0);
+  const [farmers, setFarmers] = useState(0);
+
+  // スキン・かくし
+  const [skinsOwned, setSkinsOwned] = useState({ plain: true });
+  const [activeSkin, setActiveSkin] = useState("plain");
+  const [secret, setSecret] = useState(false);
+  const titleClicks = useRef(0);
+
+  // セーブ
+  const [saveText, setSaveText] = useState("");
+
+  const pid = useRef(0);
+  const skin = SKINS.find((s) => s.id === activeSkin) || SKINS[0];
+  const skinRef = useRef(activeSkin);
+  skinRef.current = activeSkin;
+
+  // スキン能力
+  const skinClickMult = activeSkin === "yukari" ? 1.15 : activeSkin === "gold" ? 1.15 : 1;
+  const skinCpsMult = activeSkin === "genmai" ? 1.1 : activeSkin === "gold" ? 1.15 : 1;
+  const skinBuildingMult = activeSkin === "yaki" ? 0.95 : 1;
+
+  const clickPower =
+    UPGRADES.reduce((p, u) => p * (upgrades[u.id] ? u.mult : 1), 1) *
+    skinClickMult *
+    (frenzy > 0 ? 7 : 1);
+
+  const baseCps =
+    BUILDINGS.reduce((s, b) => s + b.cps * (owned[b.id] || 0), 0) * skinCpsMult;
+  const cps = baseCps * (frenzy > 0 ? 7 : 1);
+  const cpsRef = useRef(cps);
+  cpsRef.current = cps;
+
+  const buildingCost = (b, n) => Math.ceil(b.baseCost * Math.pow(1.15, n) * skinBuildingMult);
+
+  // 自動生産ティック
+  useEffect(() => {
+    const t = setInterval(() => {
+      const gain = cpsRef.current / 10;
+      if (gain > 0) {
+        setRice((r) => r + gain);
+        setTotalRice((r) => r + gain);
+      }
+    }, 100);
+    return () => clearInterval(t);
+  }, []);
+
+  // フィーバー
+  useEffect(() => {
+    if (frenzy <= 0) return;
+    const t = setInterval(() => setFrenzy((f) => Math.max(0, f - 1)), 1000);
+    return () => clearInterval(t);
+  }, [frenzy > 0]);
+
+  // 金のおにぎり出現(赤飯スキンで間隔短縮)
+  useEffect(() => {
+    let timer;
+    const schedule = () => {
+      const speedup = skinRef.current === "sekihan" ? 0.75 : 1;
+      timer = setTimeout(() => {
+        setGolden({ x: 10 + Math.random() * 75, y: 12 + Math.random() * 65 });
+        setTimeout(() => setGolden(null), 8000);
+        schedule();
+      }, (25000 + Math.random() * 25000) * speedup);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 相場の変動(15秒ごと):具材・米・ブランド米すべて株価のように動く
+  useEffect(() => {
+    const t = setInterval(() => {
+      setMarket((m) => {
+        const next = { ...m };
+        for (const f of FILLINGS) {
+          const drift = (Math.random() - 0.5) * 0.3;
+          next[f.id] = Math.min(1.5, Math.max(0.6, (next[f.id] || 1) + drift));
+        }
+        return next;
+      });
+      setRiceMkt((r) => Math.min(1.3, Math.max(0.75, r + (Math.random() - 0.5) * 0.18)));
+      setBrandMkt((m) => {
+        const next = { ...m };
+        for (const b of BRANDS) {
+          next[b.id] = Math.min(1.4, Math.max(0.7, (next[b.id] || 1) + (Math.random() - 0.5) * 0.22));
+        }
+        return next;
+      });
+      if (Math.random() < 0.5) {
+        const f = FILLINGS[Math.floor(Math.random() * FILLINGS.length)];
+        setTrending(f.id);
+      }
+    }, 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  const pushToast = useCallback((msg) => {
+    const id = pid.current++;
+    setToasts((t) => [...t, { id, msg }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
+  }, []);
+
+  // 実績チェック
+  useEffect(() => {
+    const state = { clicks, totalRice, owned, upgrades, goldenClicks, crafted, sold, profit, skinsOwned, farmers, secret };
+    for (const a of ACHIEVEMENTS) {
+      if (!unlocked[a.id] && a.cond(state)) {
+        setUnlocked((u) => ({ ...u, [a.id]: true }));
+        pushToast(`🏆 実績解除:${a.name}`);
+      }
+    }
+  }, [clicks, totalRice, owned, upgrades, goldenClicks, crafted, sold, profit, skinsOwned, farmers, secret, unlocked, pushToast]);
+
+  // タイトルの🍙クリック(かくし実績)
+  const pokeTitle = () => {
+    titleClicks.current += 1;
+    if (titleClicks.current === 7 && !secret) {
+      setSecret(true);
+      pushToast("🤫 ……なにか見つけたようだ");
+    }
+  };
+
+  const handleClick = useCallback(
+    (e) => {
+      setRice((r) => r + clickPower);
+      setTotalRice((r) => r + clickPower);
+      setClicks((c) => c + 1);
+      setSquish(true);
+      setTimeout(() => setSquish(false), 100);
+
+      const rect = e.currentTarget.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+
+      const tId = pid.current++;
+      setParticles((p) => [
+        ...p,
+        { id: tId, x: cx + (Math.random() * 40 - 20), y: cy - 10, text: `+${fmt(clickPower)}` },
+      ]);
+      setTimeout(() => setParticles((p) => p.filter((q) => q.id !== tId)), 800);
+
+      const newGrains = [];
+      const count = 3 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 22 + Math.random() * 38;
+        newGrains.push({
+          id: pid.current++,
+          x: cx, y: cy,
+          dx: Math.cos(angle) * dist,
+          dy: Math.abs(Math.sin(angle)) * dist * 0.5 + 14,
+          rot: Math.random() * 180 - 90,
+          dur: 0.9 + Math.random() * 0.4,
+        });
+      }
+      setGrains((g) => [...g, ...newGrains]);
+      setTimeout(() => setGrains((g) => g.filter((q) => !newGrains.some((n) => n.id === q.id))), 1500);
+    },
+    [clickPower]
+  );
+
+  const clickGolden = () => {
+    setGolden(null);
+    setGoldenClicks((c) => c + 1);
+    if (Math.random() < 0.5) {
+      const bonus = Math.max(cpsRef.current * 60, clickPower * 100);
+      setRice((r) => r + bonus);
+      setTotalRice((r) => r + bonus);
+      pushToast(`🍙✨ 豊作だ! +${fmt(bonus)} 米粒`);
+    } else {
+      setFrenzy(15);
+      pushToast("🔥 フィーバー! 15秒間 生産 ×7!");
+    }
+  };
+
+  const buy = (b) => {
+    const cost = buildingCost(b, owned[b.id] || 0);
+    if (rice < cost) return;
+    setRice((r) => r - cost);
+    setOwned((o) => ({ ...o, [b.id]: (o[b.id] || 0) + 1 }));
+  };
+
+  const buyUpgrade = (u) => {
+    if (rice < u.cost || upgrades[u.id]) return;
+    setRice((r) => r - u.cost);
+    setUpgrades((o) => ({ ...o, [u.id]: true }));
+    pushToast(`${u.icon} ${u.name} を入手! クリック力${u.mult}倍!`);
+  };
+
+  // ---------- 工房 ----------
+  const craft = (n) => {
+    const f = FILLINGS.find((x) => x.id === selFilling);
+    const b = BRANDS.find((x) => x.id === selBrand);
+    const unit = craftCost(f, b, market, riceMkt, brandMkt, farmers);
+    const cost = unit * n;
+    if (rice < cost) return;
+    setRice((r) => r - cost);
+    setCrafted((c) => c + n);
+    setProfit((p) => p - cost);
+    setInventory((inv) => {
+      const i = inv.findIndex((x) => x.fid === f.id && x.bid === b.id);
+      if (i >= 0) {
+        const next = [...inv];
+        next[i] = { ...next[i], count: next[i].count + n };
+        return next;
+      }
+      return [...inv, { fid: f.id, bid: b.id, count: n }];
+    });
+  };
+
+  const sell = (item) => {
+    const f = FILLINGS.find((x) => x.id === item.fid);
+    const b = BRANDS.find((x) => x.id === item.bid);
+    const price = sellPrice(f, b, market, trending) * item.count;
+    setRice((r) => r + price);
+    setTotalRice((r) => r + price);
+    setSold((s) => s + item.count);
+    setProfit((p) => p + price);
+    setInventory((inv) => inv.filter((x) => !(x.fid === item.fid && x.bid === item.bid)));
+    pushToast(`💰 ${f.name}おにぎり×${item.count} を ${fmt(price)} 粒で売却!`);
+  };
+
+  const hireFarmer = () => {
+    const cost = farmerCost(farmers);
+    if (rice < cost) return;
+    setRice((r) => r - cost);
+    setFarmers((n) => n + 1);
+    pushToast(`👨‍🌾 契約農家が増えた! 米の仕入れ -${Math.min(50, (farmers + 1) * 3)}%`);
+  };
+
+  const buySkin = (s) => {
+    if (skinsOwned[s.id]) {
+      setActiveSkin(s.id);
+      return;
+    }
+    if (rice < s.cost) return;
+    setRice((r) => r - s.cost);
+    setSkinsOwned((o) => ({ ...o, [s.id]: true }));
+    setActiveSkin(s.id);
+    pushToast(`👘 ${s.name} に着せ替え! (${s.ability})`);
+  };
+
+  // ---------- セーブ ----------
+  const exportSave = () => {
+    const code = encodeSave({
+      v: 1, rice, totalRice, clicks, owned, upgrades, goldenClicks, unlocked,
+      inventory, crafted, sold, profit, farmers, skinsOwned, activeSkin, secret,
+    });
+    setSaveText(code);
+    pushToast("📋 セーブコードを書き出した! コピーしてね");
+  };
+
+  const importSave = () => {
+    try {
+      const d = decodeSave(saveText.trim());
+      if (d.v !== 1) throw new Error("version");
+      setRice(d.rice || 0); setTotalRice(d.totalRice || 0); setClicks(d.clicks || 0);
+      setOwned(d.owned || {}); setUpgrades(d.upgrades || {});
+      setGoldenClicks(d.goldenClicks || 0); setUnlocked(d.unlocked || {});
+      setInventory(d.inventory || []); setCrafted(d.crafted || 0);
+      setSold(d.sold || 0); setProfit(d.profit || 0); setFarmers(d.farmers || 0);
+      setSkinsOwned(d.skinsOwned || { plain: true });
+      setActiveSkin(d.activeSkin || "plain");
+      setSecret(!!d.secret);
+      pushToast("✅ セーブデータを読み込んだ! おかえり!");
+    } catch {
+      pushToast("❌ コードが読み込めなかった…形式を確認してね");
+    }
+  };
+
+  const visibleUpgrades = UPGRADES.filter((u) => !upgrades[u.id] && totalRice >= u.cost * 0.4);
+  const achCount = Object.values(unlocked).filter(Boolean).length;
+  const koubouUnlocked = totalRice >= RICE_PER_ONIGIRI;
+  const curF = FILLINGS.find((x) => x.id === selFilling);
+  const curB = BRANDS.find((x) => x.id === selBrand);
+  const curCost = craftCost(curF, curB, market, riceMkt, brandMkt, farmers);
+  const curSell = sellPrice(curF, curB, market, trending);
+
+  const TABS = [
+    { id: "shop", label: "ショップ" },
+    ...(koubouUnlocked ? [{ id: "koubou", label: "工房" }] : []),
+    { id: "shisetsu", label: "施設" },
+    { id: "skin", label: "きせかえ" },
+    { id: "jisseki", label: "実績" },
+    { id: "save", label: "セーブ" },
+  ];
+
+  return (
+    <div className="root">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Zen+Maru+Gothic:wght@400;700&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        .root {
+          min-height: 100vh;
+          background: linear-gradient(180deg, #1a2433 0%, #232f42 60%, #2b3a52 100%);
+          color: #f5f1e8;
+          font-family: 'Zen Maru Gothic', sans-serif;
+          display: flex; flex-direction: column;
+        }
+        .header { text-align: center; padding: 18px 12px 6px; }
+        .title {
+          font-family: 'DotGothic16', monospace;
+          font-size: clamp(24px, 6vw, 40px);
+          letter-spacing: 2px; color: #ffd97a;
+          text-shadow: 3px 3px 0 #00000055;
+          user-select: none;
+        }
+        .title-emoji { cursor: pointer; display: inline-block; transition: transform 0.1s; }
+        .title-emoji:active { transform: scale(0.8) rotate(-10deg); }
+        .stats { text-align: center; padding: 6px 12px 12px; }
+        .rice-count {
+          font-family: 'DotGothic16', monospace;
+          font-size: clamp(28px, 7vw, 44px); color: #fff;
+        }
+        .cps { color: #9fb3cc; font-size: 14px; margin-top: 2px; }
+        .skin-ability { color: #ffd97a; font-size: 12px; margin-top: 2px; }
+        .frenzy-banner {
+          background: #e94f37; color: #fff;
+          font-family: 'DotGothic16', monospace;
+          text-align: center; padding: 6px; font-size: 15px;
+          animation: blink 0.6s infinite alternate;
+        }
+        @keyframes blink { from { opacity: 1 } to { opacity: 0.7 } }
+        .main {
+          display: flex; flex-direction: column; flex: 1;
+          max-width: 980px; width: 100%; margin: 0 auto;
+        }
+        @media (min-width: 760px) {
+          .main { flex-direction: row; gap: 16px; padding: 0 16px; }
+          .left { flex: 1; position: sticky; top: 0; align-self: flex-start; }
+          .right { width: 400px; }
+        }
+        .left {
+          position: relative; display: flex;
+          align-items: center; justify-content: center;
+          padding: 12px 0 24px; min-height: 300px;
+          overflow: hidden;
+        }
+        .onigiri-btn {
+          background: none; border: none; cursor: pointer;
+          transition: transform 0.08s ease;
+          -webkit-tap-highlight-color: transparent;
+          filter: drop-shadow(0 12px 24px rgba(0,0,0,0.45));
+        }
+        .onigiri-btn:active, .onigiri-btn.squish { transform: scale(0.9); }
+        .onigiri-btn:focus-visible { outline: 3px dashed #ffd97a; outline-offset: 8px; border-radius: 50%; }
+        .particle {
+          position: absolute;
+          font-family: 'DotGothic16', monospace;
+          font-size: 20px; color: #ffd97a;
+          pointer-events: none;
+          animation: floatUp 0.8s ease-out forwards;
+          text-shadow: 2px 2px 0 #00000088;
+          z-index: 5;
+        }
+        @keyframes floatUp {
+          from { opacity: 1; transform: translateY(0); }
+          to { opacity: 0; transform: translateY(-70px); }
+        }
+        .grain {
+          position: absolute;
+          width: 12px; height: 6.5px;
+          background: linear-gradient(180deg, ${skin.riceA}, ${skin.riceB});
+          border-radius: 50%;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.35);
+          pointer-events: none;
+          animation: scatter var(--dur) forwards;
+          animation-timing-function: cubic-bezier(0.15, 0.85, 0.3, 1);
+          z-index: 4;
+        }
+        @keyframes scatter {
+          0% { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+          35% { transform: translate(calc(var(--dx) * 0.9), calc(var(--dy) * 0.75)) rotate(var(--rot)); }
+          70% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1, 0.85); }
+          100% { opacity: 0; transform: translate(var(--dx), calc(var(--dy) + 3px)) rotate(var(--rot)) scale(1.05, 0.7); }
+        }
+        .right { padding: 0 12px 24px; }
+        .tabbar {
+          display: flex; gap: 4px; margin: 10px 0;
+          background: #24304455; border-radius: 12px; padding: 4px;
+          overflow-x: auto;
+        }
+        .tabbtn {
+          flex: 1; border: none; background: none;
+          color: #9fb3cc; font-family: 'Zen Maru Gothic', sans-serif;
+          font-weight: 700; font-size: 12px;
+          padding: 8px 4px; border-radius: 9px; cursor: pointer;
+          white-space: nowrap;
+        }
+        .tabbtn.active { background: #ffd97a; color: #1a2433; }
+        .section-label {
+          font-family: 'DotGothic16', monospace;
+          font-size: 14px; color: #ffd97a;
+          margin: 14px 0 8px; letter-spacing: 2px;
+        }
+        .shop-item {
+          width: 100%; display: flex; align-items: center; gap: 10px;
+          background: #2e3d54; border: 2px solid #44587a;
+          border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+          cursor: pointer; color: #f5f1e8;
+          font-family: inherit; text-align: left;
+          transition: border-color 0.15s, transform 0.1s;
+        }
+        .shop-item:not(:disabled):hover { border-color: #ffd97a; }
+        .shop-item:not(:disabled):active { transform: scale(0.98); }
+        .shop-item:disabled { opacity: 0.45; cursor: default; }
+        .shop-item.premium { border-color: #e8a13d; background: #3d3349; }
+        .shop-item.selected { border-color: #ffd97a; background: #3a4a66; }
+        .shop-icon { font-size: 26px; width: 34px; text-align: center; }
+        .shop-body { flex: 1; min-width: 0; }
+        .shop-name { font-weight: 700; font-size: 15px; }
+        .shop-desc { font-size: 11px; color: #9fb3cc; }
+        .shop-cost { font-family: 'DotGothic16', monospace; font-size: 14px; color: #ffd97a; white-space: nowrap; }
+        .shop-owned {
+          font-family: 'DotGothic16', monospace;
+          font-size: 22px; color: #6f86a8;
+          min-width: 30px; text-align: right;
+        }
+        .trend-badge {
+          background: #e94f37; color: #fff;
+          font-size: 10px; font-weight: 700;
+          border-radius: 999px; padding: 2px 8px; margin-left: 6px;
+        }
+        .craft-row { display: flex; gap: 8px; margin: 10px 0; }
+        .craft-btn {
+          flex: 1; background: #ffd97a; color: #1a2433;
+          border: none; border-radius: 12px;
+          font-family: 'Zen Maru Gothic', sans-serif;
+          font-weight: 700; font-size: 14px;
+          padding: 12px; cursor: pointer;
+          transition: transform 0.1s;
+        }
+        .craft-btn:not(:disabled):active { transform: scale(0.97); }
+        .craft-btn:disabled { opacity: 0.4; cursor: default; }
+        .price-info {
+          background: #24304477; border-radius: 12px;
+          padding: 10px 14px; font-size: 13px;
+          margin-top: 8px; line-height: 1.7;
+        }
+        .price-info b { color: #ffd97a; }
+        .sell-btn {
+          background: #7ec97e; color: #15301a;
+          border: none; border-radius: 999px;
+          font-family: inherit; font-weight: 700; font-size: 12px;
+          padding: 6px 14px; cursor: pointer; white-space: nowrap;
+        }
+        .building-row {
+          background: #2e3d54; border: 2px solid #44587a;
+          border-radius: 12px; padding: 10px 12px; margin-bottom: 8px;
+        }
+        .building-head {
+          display: flex; justify-content: space-between;
+          font-weight: 700; font-size: 14px; margin-bottom: 6px;
+        }
+        .building-icons { font-size: 20px; line-height: 1.5; word-break: break-all; }
+        .building-count { color: #9fb3cc; font-family: 'DotGothic16', monospace; }
+        .skin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .skin-card {
+          background: #2e3d54; border: 2px solid #44587a;
+          border-radius: 12px; padding: 12px; text-align: center;
+          cursor: pointer; color: #f5f1e8; font-family: inherit;
+          transition: border-color 0.15s;
+        }
+        .skin-card:not(:disabled):hover { border-color: #ffd97a; }
+        .skin-card.active { border-color: #ffd97a; background: #3a4a66; }
+        .skin-card:disabled { opacity: 0.45; cursor: default; }
+        .skin-swatch {
+          width: 44px; height: 38px; margin: 0 auto 6px;
+          clip-path: polygon(50% 0%, 100% 78%, 88% 100%, 12% 100%, 0% 78%);
+        }
+        .skin-name { font-weight: 700; font-size: 13px; }
+        .skin-ab { font-size: 10px; color: #9fb3cc; margin-top: 2px; min-height: 24px; }
+        .skin-price { font-family: 'DotGothic16', monospace; font-size: 12px; color: #ffd97a; margin-top: 2px; }
+        .ach-item {
+          display: flex; align-items: center; gap: 10px;
+          background: #2e3d54; border-radius: 10px;
+          padding: 8px 12px; border: 2px solid #44587a; margin-bottom: 6px;
+        }
+        .ach-item.locked { opacity: 0.55; }
+        .ach-item.done { border-color: #ffd97a; }
+        .ach-name { font-weight: 700; font-size: 13px; }
+        .ach-desc { font-size: 11px; color: #9fb3cc; }
+        .save-area {
+          width: 100%; min-height: 110px;
+          background: #1d2736; color: #cfe0f5;
+          border: 2px solid #44587a; border-radius: 12px;
+          font-family: monospace; font-size: 11px;
+          padding: 10px; resize: vertical;
+        }
+        .golden {
+          position: fixed; font-size: 52px; cursor: pointer;
+          background: none; border: none; z-index: 50;
+          animation: goldPulse 0.8s infinite alternate;
+          filter: drop-shadow(0 0 14px #ffd97a);
+        }
+        @keyframes goldPulse { from { transform: scale(1) rotate(-6deg); } to { transform: scale(1.15) rotate(6deg); } }
+        .toast-area {
+          position: fixed; top: 14px; left: 50%;
+          transform: translateX(-50%);
+          display: flex; flex-direction: column; gap: 6px;
+          z-index: 60; align-items: center;
+        }
+        .toast {
+          background: #ffd97a; color: #1a2433;
+          font-weight: 700; padding: 9px 18px;
+          border-radius: 999px;
+          box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+          font-size: 13px; white-space: nowrap;
+          animation: toastIn 0.25s ease-out;
+        }
+        @keyframes toastIn {
+          from { opacity: 0; transform: translateY(-12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .footer-stats {
+          text-align: center; font-size: 12px;
+          color: #6f86a8; padding: 8px 0 18px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .particle, .golden, .frenzy-banner, .toast { animation: none; }
+          .grain { display: none; }
+        }
+      `}</style>
+
+      {frenzy > 0 && (
+        <div className="frenzy-banner">🔥 フィーバー中! ×7 (残り{frenzy}秒) 🔥</div>
+      )}
+
+      <header className="header">
+        <h1 className="title">
+          <span
+            className="title-emoji"
+            onClick={pokeTitle}
+            role="button"
+            aria-label="ひみつ"
+          >
+            🍙
+          </span>{" "}
+          おむすびくりっかー
+        </h1>
+      </header>
+
+      <div className="stats">
+        <div className="rice-count">{fmt(rice)} 米粒</div>
+        <div className="cps">毎秒 {fmtCps(cps)} 粒 ・ クリック力 {fmt(clickPower)}</div>
+        {skin.id !== "plain" && (
+          <div className="skin-ability">👘 {skin.name}:{skin.ability}</div>
+        )}
+      </div>
+
+      <div className="main">
+        <div className="left">
+          {particles.map((p) => (
+            <span key={p.id} className="particle" style={{ left: p.x, top: p.y }}>{p.text}</span>
+          ))}
+          {grains.map((g) => (
+            <span key={g.id} className="grain"
+              style={{ left: g.x, top: g.y, "--dx": `${g.dx}px`, "--dy": `${g.dy}px`, "--rot": `${g.rot}deg`, "--dur": `${g.dur}s` }} />
+          ))}
+          <button
+            className={`onigiri-btn ${squish ? "squish" : ""}`}
+            onClick={handleClick}
+            aria-label="おむすびを握る"
+          >
+            <OnigiriSVG skin={skin} />
+          </button>
+        </div>
+
+        <div className="right">
+          <div className="tabbar">
+            {TABS.map((t) => (
+              <button key={t.id} className={`tabbtn ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ---------- ショップ ---------- */}
+          {tab === "shop" && (
+            <>
+              {visibleUpgrades.length > 0 && (
+                <>
+                  <div className="section-label">▼ グレードアップ</div>
+                  {visibleUpgrades.map((u) => (
+                    <button key={u.id} className={`shop-item ${u.id === "bodakko" ? "premium" : ""}`}
+                      disabled={rice < u.cost} onClick={() => buyUpgrade(u)}>
+                      <span className="shop-icon">{u.icon}</span>
+                      <span className="shop-body">
+                        <div className="shop-name">{u.name}</div>
+                        <div className="shop-desc">{u.desc}</div>
+                      </span>
+                      <span className="shop-cost">{fmt(u.cost)} 粒</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              <div className="section-label">▼ 生産施設{skinBuildingMult < 1 ? "(焼きおにぎり割引中)" : ""}</div>
+              {BUILDINGS.map((b, i) => {
+                const n = owned[b.id] || 0;
+                const cost = buildingCost(b, n);
+                const unlockedB = totalRice >= b.baseCost * 0.3 || n > 0 || i === 0;
+                if (!unlockedB) return null;
+                return (
+                  <button key={b.id} className="shop-item" disabled={rice < cost} onClick={() => buy(b)}>
+                    <span className="shop-icon">{b.icon}</span>
+                    <span className="shop-body">
+                      <div className="shop-name">{b.name}</div>
+                      <div className="shop-desc">{b.desc} ・ 毎秒 {fmtCps(b.cps)} 粒</div>
+                    </span>
+                    <span className="shop-cost">{fmt(cost)} 粒</span>
+                    <span className="shop-owned">{n > 0 ? n : ""}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* ---------- 工房 ---------- */}
+          {tab === "koubou" && (
+            <>
+              <div className="section-label">▼ 米相場</div>
+              <div className="price-info">
+                🌾 白米の仕入れ:<b>{fmt(ricePrice(riceMkt, farmers))} 粒/個</b>(相場 {marketPct(riceMkt)}
+                {farmers > 0 && <>、農家割引 -{Math.min(50, farmers * 3)}%</>})
+              </div>
+              <button className="shop-item" disabled={rice < farmerCost(farmers)} onClick={hireFarmer} style={{ marginTop: 8 }}>
+                <span className="shop-icon">👨‍🌾</span>
+                <span className="shop-body">
+                  <div className="shop-name">契約農家と契約する</div>
+                  <div className="shop-desc">米の仕入れ価格 -3%/軒(最大-50%)</div>
+                </span>
+                <span className="shop-cost">{fmt(farmerCost(farmers))} 粒</span>
+                <span className="shop-owned">{farmers > 0 ? farmers : ""}</span>
+              </button>
+
+              <div className="section-label">▼ ブレンド米を選ぶ(相場変動中)</div>
+              {BRANDS.map((b) => (
+                <button key={b.id} className={`shop-item ${selBrand === b.id ? "selected" : ""}`} onClick={() => setSelBrand(b.id)}>
+                  <span className="shop-icon">🌾</span>
+                  <span className="shop-body">
+                    <div className="shop-name">{b.name}</div>
+                    <div className="shop-desc">
+                      売値 ×{b.mult.toFixed(1)}
+                      {b.premium > 0 && <> ・ 相場 {marketPct(brandMkt[b.id] || 1)}</>}
+                    </div>
+                  </span>
+                  <span className="shop-cost">+{fmt(brandPremium(b, brandMkt))} 粒/個</span>
+                </button>
+              ))}
+
+              <div className="section-label">▼ 具材を選ぶ(相場変動中)</div>
+              {FILLINGS.map((f) => (
+                <button key={f.id} className={`shop-item ${selFilling === f.id ? "selected" : ""}`} onClick={() => setSelFilling(f.id)}>
+                  <span className="shop-icon">{f.icon}</span>
+                  <span className="shop-body">
+                    <div className="shop-name">
+                      {f.name}
+                      {trending === f.id && <span className="trend-badge">📈 流行中!</span>}
+                    </div>
+                    <div className="shop-desc">
+                      仕入れ {fmt(fillingBuyPrice(f, market))} 粒 ・ 相場 {marketPct(market[f.id] || 1)}
+                    </div>
+                  </span>
+                  <span className="shop-cost">売値 {fmt(sellPrice(f, curB, market, trending))}</span>
+                </button>
+              ))}
+
+              <div className="price-info">
+                🍙 <b>{curB.name} × {curF.name}</b>
+                <br />
+                原価:米 {fmt(ricePrice(riceMkt, farmers))} + 米代 {fmt(brandPremium(curB, brandMkt))} + 具 {fmt(fillingBuyPrice(curF, market))} = <b>{fmt(curCost)} 粒</b>
+                <br />
+                現在の売値:<b>{fmt(curSell)} 粒</b>(利益 {fmt(curSell - curCost)} 粒/個)
+                <br />
+                <span style={{ fontSize: 11, color: "#9fb3cc" }}>
+                  ※相場は15秒ごとに変動。安く仕入れて、流行ったら売る。なお支払いも米粒。
+                </span>
+              </div>
+
+              <div className="craft-row">
+                <button className="craft-btn" disabled={rice < curCost} onClick={() => craft(1)}>握る ×1</button>
+                <button className="craft-btn" disabled={rice < curCost * 10} onClick={() => craft(10)}>握る ×10</button>
+                <button className="craft-btn" disabled={rice < curCost * 100} onClick={() => craft(100)}>握る ×100</button>
+              </div>
+
+              <div className="section-label">▼ 在庫(タイミングを見て売れ!)</div>
+              {inventory.length === 0 && (
+                <div className="shop-desc" style={{ padding: "4px 2px" }}>
+                  まだ在庫がないよ。握って、流行を待って、高く売ろう。
+                </div>
+              )}
+              {inventory.map((item) => {
+                const f = FILLINGS.find((x) => x.id === item.fid);
+                const b = BRANDS.find((x) => x.id === item.bid);
+                const p = sellPrice(f, b, market, trending);
+                return (
+                  <div key={item.fid + item.bid} className="shop-item" style={{ cursor: "default" }}>
+                    <span className="shop-icon">{f.icon}</span>
+                    <span className="shop-body">
+                      <div className="shop-name">
+                        {f.name}({b.name})×{item.count}
+                        {trending === f.id && <span className="trend-badge">📈</span>}
+                      </div>
+                      <div className="shop-desc">今売ると {fmt(p)} 粒/個</div>
+                    </span>
+                    <button className="sell-btn" onClick={() => sell(item)}>
+                      全部売る {fmt(p * item.count)}
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="price-info">
+                累計販売 <b>{sold.toLocaleString("ja-JP")}</b> 個 ・ 累計利益 <b>{fmt(profit)}</b> 粒
+              </div>
+            </>
+          )}
+
+          {/* ---------- 施設一覧 ---------- */}
+          {tab === "shisetsu" && (
+            <>
+              <div className="section-label">▼ あなたのおむすび帝国</div>
+              {BUILDINGS.filter((b) => (owned[b.id] || 0) > 0).length === 0 && (
+                <div className="shop-desc">まだ施設がないよ。ショップで買おう!</div>
+              )}
+              {BUILDINGS.map((b) => {
+                const n = owned[b.id] || 0;
+                if (n === 0) return null;
+                return (
+                  <div key={b.id} className="building-row">
+                    <div className="building-head">
+                      <span>{b.name}</span>
+                      <span className="building-count">×{n} ・ 毎秒 {fmtCps(b.cps * n * skinCpsMult)} 粒</span>
+                    </div>
+                    <div className="building-icons">
+                      {b.icon.repeat(Math.min(n, 40))}
+                      {n > 40 && ` …+${n - 40}`}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* ---------- きせかえ ---------- */}
+          {tab === "skin" && (
+            <>
+              <div className="section-label">▼ おむすびスキン(能力つき)</div>
+              <div className="skin-grid">
+                {SKINS.map((s) => {
+                  const ownedSkin = !!skinsOwned[s.id];
+                  return (
+                    <button key={s.id} className={`skin-card ${activeSkin === s.id ? "active" : ""}`}
+                      disabled={!ownedSkin && rice < s.cost} onClick={() => buySkin(s)}>
+                      <div className="skin-swatch"
+                        style={{ background: `linear-gradient(160deg, ${s.riceA}, ${s.riceB})` }} />
+                      <div className="skin-name">{s.name}</div>
+                      <div className="skin-ab">{s.ability}</div>
+                      <div className="skin-price">
+                        {activeSkin === s.id ? "装着中" : ownedSkin ? "きせかえる" : `${fmt(s.cost)} 粒`}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="price-info" style={{ marginTop: 10 }}>
+                💡 能力は<b>装着中のスキンのみ</b>発動するよ。状況で着替えよう。
+              </div>
+            </>
+          )}
+
+          {/* ---------- 実績 ---------- */}
+          {tab === "jisseki" && (
+            <>
+              <div className="section-label">▼ 実績 ({achCount}/{ACHIEVEMENTS.length})</div>
+              {ACHIEVEMENTS.map((a) => {
+                const done = !!unlocked[a.id];
+                return (
+                  <div key={a.id} className={`ach-item ${done ? "done" : "locked"}`}>
+                    <AchIcon id={a.id} done={done} />
+                    <span>
+                      <div className="ach-name">{done ? a.name : "???"}</div>
+                      <div className="ach-desc">{a.secret && !done ? "?????" : a.desc}</div>
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+
+          {/* ---------- セーブ ---------- */}
+          {tab === "save" && (
+            <>
+              <div className="section-label">▼ セーブ&ロード</div>
+              <div className="price-info" style={{ marginBottom: 10 }}>
+                「書き出す」でセーブコードを生成 → コピーしてメモなどに保存。
+                <br />
+                続きから遊ぶときは、コードを貼り付けて「読み込む」!
+              </div>
+              <textarea
+                className="save-area"
+                value={saveText}
+                onChange={(e) => setSaveText(e.target.value)}
+                placeholder="ここにセーブコードが出ます / 貼り付けます"
+              />
+              <div className="craft-row">
+                <button className="craft-btn" onClick={exportSave}>📤 書き出す</button>
+                <button className="craft-btn" onClick={importSave} disabled={!saveText.trim()}>📥 読み込む</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="footer-stats">
+        累計 {fmt(totalRice)} 粒 ・ {clicks.toLocaleString("ja-JP")} 回握った ・ 販売 {sold.toLocaleString("ja-JP")} 個 ・ 実績 {achCount}/{ACHIEVEMENTS.length}
+      </div>
+
+      {golden && (
+        <button className="golden" style={{ left: `${golden.x}%`, top: `${golden.y}%` }}
+          onClick={clickGolden} aria-label="金のおにぎり">
+          🍙
+        </button>
+      )}
+
+      <div className="toast-area">
+        {toasts.map((t) => (
+          <div key={t.id} className="toast">{t.msg}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<OnigiriClicker />);
+
+</script>
+</body>
+</html>
