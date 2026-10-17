@@ -12,7 +12,8 @@ test('the deployed Babel preset produces a runnable classic React script', async
   assert.equal(response.ok, true, `Babel download: ${response.status}`);
   const compiler = vm.createContext({});
   vm.runInContext(await response.text(), compiler);
-  const [, presets, source] = html.match(/<script type="text\/babel" data-presets="([^"]+)">([\s\S]*?)<\/script>/);
+  const [, presets, sourcePath] = html.match(/<script type="text\/babel" data-presets="([^"]+)" src="([^"?]+)/);
+  const source = fs.readFileSync(path.join(__dirname, '..', sourcePath), 'utf8');
   const { code } = compiler.Babel.transform(source, { presets: presets.split(',') });
 
   // Reproduce the browser's classic-script execution, which rejects module imports.
@@ -27,7 +28,9 @@ test('the deployed Babel preset produces a runnable classic React script', async
     },
     ReactDOM: { createRoot: () => ({ render: (element) => { rendered = element.type(); } }) },
     document: { getElementById: () => ({}) },
+    localStorage: { getItem: () => null },
   });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../game.js'), 'utf8'), app);
   new vm.Script(code).runInContext(app);
   assert.equal(rendered.type, 'div');
   assert.equal(rendered.props.className, 'root');
