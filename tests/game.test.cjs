@@ -23,8 +23,8 @@ test('15 hand clicks buy the first producer, which really produces 0.5 per secon
 });
 
 test('bulk cost equals repeated singles including rounding and skin discount', () => {
-  for (const activeSkin of ['plain','yaki']) for (const quantity of [1,10,100]) {
-    const s = {...G.newGame(),rice:1e20,activeSkin,owned:{suihanki:7}};
+  for (const activeSkin of ['plain','yaki']) for (const quantity of [1,10,100,1000]) {
+    const s = {...G.newGame(),rice:1e70,activeSkin,owned:{suihanki:7}};
     const bulk = G.buyBuilding(s,'suihanki',quantity);
     let singles=s;
     for (let i=0;i<quantity;i++) singles=G.buyBuilding(singles,'suihanki');
@@ -33,7 +33,20 @@ test('bulk cost equals repeated singles including rounding and skin discount', (
     let sum=0;
     for(let i=0;i<quantity;i++) sum+=G.buildingPrice({...s,owned:{suihanki:7+i}},b);
     assert.equal(G.buildingPrice(s,b,quantity),sum);
+    assert.equal(bulk.rice,s.rice-sum);
   }
+});
+
+test('1000 producers cost the full increasing total and never grant a partial purchase', () => {
+  const s=G.newGame(), b=G.BUILDINGS[0];
+  const cost=G.buildingPrice(s,b,1000);
+  assert.ok(Number.isFinite(cost) && cost>G.buildingPrice(s,b,100)*10);
+  const short={...s,rice:cost*.999};
+  assert.equal(G.buyBuilding(short,b.id,1000),short);
+  const bought=G.buyBuilding({...s,rice:cost},b.id,1000);
+  assert.equal(bought.rice,0);
+  assert.equal(bought.owned[b.id],1000);
+  assert.equal(G.decodeSave(G.encodeSave(bought)).state.owned[b.id],1000);
 });
 
 test('bulk purchase cannot overspend and unsupported quantities do nothing', () => {

@@ -132,7 +132,8 @@ function fmt(n) {
   let out;
   if (n < 1e4) out = Math.floor(n).toLocaleString("ja-JP");
   else {
-    const units = [[1e28, "穣"], [1e24, "秭"], [1e20, "垓"], [1e16, "京"], [1e12, "兆"], [1e8, "億"], [1e4, "万"]];
+    const units = [[1e68, "無量大数"], [1e64, "不可思議"], [1e60, "那由他"], [1e56, "阿僧祇"], [1e52, "恒河沙"], [1e48, "極"], [1e44, "載"], [1e40, "正"], [1e36, "澗"], [1e32, "溝"], [1e28, "穣"], [1e24, "秭"], [1e20, "垓"], [1e16, "京"], [1e12, "兆"], [1e8, "億"], [1e4, "万"]];
+    if (n >= 1e72) return (neg ? "−" : "") + n.toExponential(2);
     out = Math.floor(n).toLocaleString("ja-JP");
     for (const [v, u] of units) {
       if (n >= v) {
@@ -509,7 +510,7 @@ function OnigiriClicker() {
               <button className={shopTab === "upgrades" ? "selected" : ""} aria-pressed={shopTab === "upgrades"} onClick={() => setShopTab("upgrades")}>強化 {affordableUpgrades > 0 && <span className="count-badge">{affordableUpgrades}</span>}</button>
             </div>
             {shopTab === "buildings" ? <>
-              <div className="shop-toolbar"><span>持っているだけで米粒を生産</span><div className="quantity" aria-label="購入数">{[1,10,100].map(n => <button key={n} aria-pressed={quantity === n} onClick={() => setQuantity(n)}>{n}</button>)}</div></div>
+              <div className="shop-toolbar"><span>持っているだけで米粒を生産</span><div className="quantity" aria-label="購入数">{Game.PURCHASE_QUANTITIES.map(n => <button key={n} aria-label={`${n}個ずつ購入`} aria-pressed={quantity === n} onClick={() => setQuantity(n)}>{n}</button>)}</div></div>
               {visibleBuildings.map(b => {
                 const n = owned[b.id] || 0, cost = Game.buildingPrice(game, b, quantity);
                 const rate = b.cps * Game.buildingMultiplier(game, b.id) * Game.skinCps(activeSkin);

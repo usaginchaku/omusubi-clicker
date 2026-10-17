@@ -259,8 +259,9 @@ function upgradeAvailable(s, u) {
   if (u.kind === "finger") return s.clicks >= u.clickNeed;
   return s.totalRice >= u.cost * 0.4;
 }
+const PURCHASE_QUANTITIES = [1, 10, 100, 1000];
 function buildingPrice(s, b, quantity = 1) {
-  if (![1, 10, 100].includes(quantity)) return Infinity;
+  if (!PURCHASE_QUANTITIES.includes(quantity)) return Infinity;
   let cost = 0;
   for (let i = 0; i < quantity; i++) cost += Math.ceil(b.baseCost * 1.15 ** ((s.owned[b.id] || 0) + i) * (s.activeSkin === "yaki" ? 0.95 : 1));
   return cost;
@@ -358,7 +359,7 @@ function offlineProgress(s, now) {
   return { state: { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, savedAt: now }, gain };
 }
 
-return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, chapterFor, newGame,
+return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame,
   production, clickPower, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();
