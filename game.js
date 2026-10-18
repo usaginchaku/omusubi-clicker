@@ -291,6 +291,47 @@ ACHIEVEMENTS.push(
   { id: "recipe_rice_burger", name: "パンの座を奪う", desc: "レシピ「ライスバーガー」を完成させる", cond: s => !!s.recipes?.rice_burger },
 );
 
+// Deliveries are a postcard collection: each destination+recipe pair is sent
+// once for a fixed rice cost, never pays rice back, and never resets.
+const OUTINGS = [
+  { id: "engawa", name: "となりの縁側", building: "obaachan", need: 10, cost: 300 },
+  { id: "picnic", name: "田んぼのピクニック", building: "tanbo", need: 10, cost: 18000 },
+  { id: "night", name: "深夜のコンビニ", building: "conbini", need: 10, cost: 100000 },
+  { id: "shrine", name: "神様のお昼休み", building: "jinja", need: 10, cost: 20000000 },
+  { id: "moon", name: "月面遠足", building: "moon", need: 10, cost: 150000000 },
+  { id: "campus", name: "おこめ大学の学食", building: "university", need: 25, cost: 3000000000 },
+  { id: "yesterday", name: "昨日への差し入れ", building: "time", need: 25, cost: 400000000000 },
+  { id: "parallel", name: "並行世界の持ち寄り会", building: "parallel", need: 50, cost: 1500000000000000 },
+  { id: "home", name: "宇宙の外の実家", building: "home", need: 100, cost: 150000000000000000000 },
+];
+const PLATES = [
+  { id: "plain", name: "いつものお皿", need: 0 },
+  { id: "paw", name: "肉球のお皿", need: 3 },
+  { id: "moon", name: "月のお皿", need: 12 },
+  { id: "rainbow", name: "虹のお皿", need: 27 },
+];
+const SOUVENIR_KEYS = OUTINGS.flatMap(o => RECIPES.map(r => `${o.id}:${r.id}`));
+const postcardCount = s => SOUVENIR_KEYS.filter(k => s.souvenirs?.[k] === true).length;
+const outingVisited = (s, id) => RECIPES.some(r => s.souvenirs?.[`${id}:${r.id}`] === true);
+const outingUnlocked = (s, id) => OUTINGS.some(o => o.id === id && ((s.owned[o.building] || 0) >= o.need || outingVisited(s, id)));
+function sendMeal(s, outingId, recipeId) {
+  const o = OUTINGS.find(x => x.id === outingId), key = `${outingId}:${recipeId}`;
+  // Sending needs the facilities today; restored postcards only keep viewing open.
+  if (!o || !RECIPES.some(r => r.id === recipeId) || (s.owned[o.building] || 0) < o.need || s.recipes?.[recipeId] !== true
+    || s.souvenirs?.[key] === true || s.rice < o.cost) return s;
+  return { ...s, rice: s.rice - o.cost, souvenirs: { ...s.souvenirs, [key]: true } };
+}
+function selectPlate(s, id) {
+  const p = PLATES.find(x => x.id === id);
+  return !p || postcardCount(s) < p.need || s.activePlate === id ? s : { ...s, activePlate: id };
+}
+ACHIEVEMENTS.push(
+  { id: "outing_first", name: "はじめてのおつかい", desc: "絵はがきを1枚もらう", cond: s => postcardCount(s) >= 1 },
+  { id: "outing_twelve", name: "冷蔵庫が絵はがきで埋まる", desc: "絵はがきを12枚もらう", cond: s => postcardCount(s) >= 12 },
+  { id: "outing_all", name: "宇宙一のおすそわけ", desc: "絵はがきを27枚すべてもらう", cond: s => postcardCount(s) >= 27 },
+  { id: "outing_world", name: "どこへでも出前", desc: "9か所すべてから絵はがきをもらう", cond: s => OUTINGS.every(o => outingVisited(s, o.id)) },
+);
+
 const CHAPTERS = [
   { at: 0, name: "台所のすみっこ", news: ["おむすび一個から始まる、ちょっと大げさな話。", "近所の猫、開店前から並ぶ。買うとは言っていない。", "塩を少々、と書かれたレシピ。少々の審議が続く。", "おばあちゃん「お腹すいてない？」。すいてなくても握る。"] },
   { at: 1000, name: "町じゅうおむすび", news: ["町内会、回覧板を海苔に変更。読後はおいしく。", "炊飯器の保温ランプ、町の夜景に認定。", "コンビニ新商品、鮭・梅・おむすびの具のおむすび。", "市民アンケート、好きな形の98%が三角に。"] },
@@ -305,7 +346,7 @@ const chapterFor = total => CHAPTERS.filter(c => total >= c.at).at(-1);
 function newGame() {
   return { v: 2, rice: 0, totalRice: 0, clicks: 0, owned: {}, upgrades: {}, goldenClicks: 0, goldenMisses: 0,
     unlocked: {}, skinsOwned: { plain: true }, activeSkin: "plain", secret: false,
-    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [], recipes: {} };
+    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [], recipes: {}, souvenirs: {}, activePlate: "plain" };
 }
 const skinCps = id => ({ genmai: 1.1, gold: 1.15, cosmos: 1.25 }[id] || 1);
 const skinClick = id => ({ yukari: 1.15, gold: 1.15, panda: 1.1, neko: 1.2 }[id] || 1);
@@ -432,6 +473,7 @@ function normalizeSave(data) {
   for (const [key, ids, counts] of [
     ["owned", BUILDINGS.map(b => b.id), true], ["upgrades", UPGRADES.map(u => u.id)],
     ["unlocked", ACHIEVEMENTS.map(a => a.id)], ["skinsOwned", SKINS.map(x => x.id)], ["recipes", RECIPES.map(r => r.id)],
+    ["souvenirs", SOUVENIR_KEYS],
   ]) {
     if (data[key] === undefined) continue;
     if (!data[key] || typeof data[key] !== "object" || Array.isArray(data[key])) throw Error(key);
@@ -445,6 +487,11 @@ function normalizeSave(data) {
   if (data.activeSkin !== undefined) {
     if (!SKINS.some(x => x.id === data.activeSkin) || !s.skinsOwned[data.activeSkin]) throw Error("skin");
     s.activeSkin = data.activeSkin;
+  }
+  if (data.activePlate !== undefined) {
+    const plate = PLATES.find(p => p.id === data.activePlate);
+    if (!plate || postcardCount(s) < plate.need) throw Error("plate");
+    s.activePlate = data.activePlate;
   }
   if (data.secret !== undefined && typeof data.secret !== "boolean") throw Error("secret");
   s.secret = !!data.secret;
@@ -482,7 +529,7 @@ function offlineProgress(s, now) {
   return { state: { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, savedAt: now }, gain };
 }
 
-return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES, recipeUnlocked, cookRecipe, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
+return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES, recipeUnlocked, cookRecipe, OUTINGS, PLATES, postcardCount, outingUnlocked, sendMeal, selectPlate, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
   production, clickPower, activeClickPower, GOLDEN_EFFECTS, goldenSettings, goldenDuration, goldenOutcome, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();

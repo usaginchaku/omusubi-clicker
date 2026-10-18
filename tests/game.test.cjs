@@ -394,3 +394,175 @@ test('a recipe achievement earned mid-frenzy cannot change the frozen 777 snapsh
   assert.equal(G.activeClickPower(cooked,boosts,1001),G.activeClickPower(s,boosts,1001));
   assert.equal(G.activeClickPower(cooked,boosts,14000),G.clickPower(cooked));
 });
+
+const allRecipes={shio_musubi:true,omurice:true,rice_burger:true};
+const allOwned=()=>Object.fromEntries(G.OUTINGS.map(o=>[o.building,o.need]));
+
+test('outings match the fixed table and unlock at the ownership boundary or a recorded postcard', () => {
+  assert.deepEqual(G.OUTINGS.map(o=>[o.id,o.name,o.building,o.need,o.cost]),[
+    ['engawa','となりの縁側','obaachan',10,300],['picnic','田んぼのピクニック','tanbo',10,18000],
+    ['night','深夜のコンビニ','conbini',10,100000],['shrine','神様のお昼休み','jinja',10,20000000],
+    ['moon','月面遠足','moon',10,150000000],['campus','おこめ大学の学食','university',25,3000000000],
+    ['yesterday','昨日への差し入れ','time',25,400000000000],['parallel','並行世界の持ち寄り会','parallel',50,1500000000000000],
+    ['home','宇宙の外の実家','home',100,150000000000000000000]]);
+  for (const o of G.OUTINGS) {
+    assert.ok(G.BUILDINGS.some(b=>b.id===o.building));
+    assert.deepEqual(Object.keys(o).sort(),['building','cost','id','name','need']);
+  }
+  const base=G.newGame();
+  assert.deepEqual(base.souvenirs,{});
+  assert.equal(base.activePlate,'plain');
+  for (const o of G.OUTINGS) {
+    assert.equal(G.outingUnlocked({...base,owned:{[o.building]:o.need-1}},o.id),false);
+    assert.equal(G.outingUnlocked({...base,owned:{[o.building]:o.need}},o.id),true);
+    assert.equal(G.outingUnlocked({...base,souvenirs:{[`${o.id}:omurice`]:true}},o.id),true, 'a recorded postcard keeps the destination reviewable');
+    assert.equal(G.outingUnlocked({...base,souvenirs:{[`${o.id}:omurice`]:false}},o.id),false);
+  }
+  assert.equal(G.outingUnlocked({...base,owned:allOwned()},'missing'),false);
+});
+
+test('sending a meal charges the exact cost once, grants no currency and never mutates', () => {
+  const s={...G.newGame(),rice:300,totalRice:1e6,crafted:3,sold:4,profit:-5,owned:{obaachan:10},recipes:{omurice:true}};
+  const frozen=JSON.stringify(s);
+  for (const bad of [
+    [{...s,rice:299.99},'engawa','omurice'],
+    [{...s,owned:{obaachan:9}},'engawa','omurice'],
+    [{...s,owned:{obaachan:9},souvenirs:{'engawa:shio_musubi':true}},'engawa','omurice'],
+    [s,'engawa','shio_musubi'],
+    [{...s,recipes:{omurice:false}},'engawa','omurice'],
+    [s,'missing','omurice'],
+    [s,'engawa','missing'],
+    [s,'picnic','omurice'],
+    [{...s,souvenirs:{'engawa:omurice':true}},'engawa','omurice'],
+  ]) assert.equal(G.sendMeal(...bad),bad[0]);
+  const sent=G.sendMeal(s,'engawa','omurice');
+  assert.equal(sent.rice,0);
+  assert.deepEqual(sent.souvenirs,{'engawa:omurice':true});
+  assert.equal(G.postcardCount(sent),1);
+  for (const key of ['totalRice','crafted','sold','profit','clicks','goldenClicks']) assert.equal(sent[key],s[key]);
+  assert.deepEqual(sent.recipes,s.recipes);
+  assert.deepEqual(sent.upgrades,s.upgrades);
+  assert.deepEqual(sent.owned,s.owned);
+  assert.equal(G.production(sent),G.production(s));
+  const rich={...sent,rice:1e9};
+  assert.equal(G.sendMeal(rich,'engawa','omurice'),rich, 'a repeat visit is free and records nothing new');
+  assert.equal(JSON.stringify(s),frozen, 'the original state is not mutated');
+});
+
+test('all 27 destination and recipe pairs can be collected exactly once', () => {
+  // Fund each destination separately: one 1.5e20 balance would swamp smaller costs.
+  let s={...G.newGame(),totalRice:123,owned:allOwned(),recipes:allRecipes};
+  for (const o of G.OUTINGS) {
+    s={...s,rice:o.cost*3};
+    for (const r of G.RECIPES) {
+      const before=s;
+      s=G.sendMeal(s,o.id,r.id);
+      assert.equal(s.rice,before.rice-o.cost);
+      assert.equal(G.sendMeal({...s,rice:1e30},o.id,r.id).rice,1e30);
+    }
+    assert.equal(s.rice,0, 'every fixed cost was spent');
+  }
+  assert.equal(G.postcardCount(s),27);
+  assert.equal(Object.keys(s.souvenirs).length,27);
+  assert.equal(s.totalRice,123);
+  const lapsed={...s,owned:{}};
+  for (const o of G.OUTINGS) assert.equal(G.outingUnlocked(lapsed,o.id),true, 'collections stay reviewable without facilities');
+  assert.equal(G.postcardCount({souvenirs:{'engawa:omurice':false,'picnic:omurice':true}}),1);
+});
+
+test('plates unlock at postcard thresholds and switch freely without cost or multiplier', () => {
+  assert.deepEqual(G.PLATES,[{id:'plain',name:'いつものお皿',need:0},{id:'paw',name:'肉球のお皿',need:3},{id:'moon',name:'月のお皿',need:12},{id:'rainbow',name:'虹のお皿',need:27}]);
+  const keys=G.OUTINGS.flatMap(o=>G.RECIPES.map(r=>`${o.id}:${r.id}`));
+  const withCards=n=>({...G.newGame(),rice:77,owned:{obaachan:5},souvenirs:Object.fromEntries(keys.slice(0,n).map(k=>[k,true]))});
+  for (const p of G.PLATES) {
+    if (p.need>0) {
+      const short=withCards(p.need-1);
+      assert.equal(G.selectPlate(short,p.id),short);
+    }
+    const s=withCards(p.need), picked=G.selectPlate(s,p.id);
+    assert.equal(picked.activePlate,p.id);
+    assert.equal(picked.rice,77);
+    assert.equal(G.production(picked),G.production(s));
+    assert.equal(G.clickPower(picked),G.clickPower(s));
+  }
+  const full=withCards(27);
+  let s=full;
+  for (const id of ['rainbow','plain','moon','paw','rainbow']) s=G.selectPlate(s,id);
+  assert.equal(s.activePlate,'rainbow');
+  assert.equal(s.rice,77);
+  assert.equal(G.selectPlate(full,'missing'),full);
+});
+
+test('old saves gain an empty collection and outing progress round-trips', () => {
+  for (const v of [1,2]) {
+    const old={v,rice:500,totalRice:9000,owned:{obaachan:10},recipes:{omurice:true}};
+    const {state}=G.normalizeSave(old);
+    assert.deepEqual(state.souvenirs,{});
+    assert.equal(state.activePlate,'plain');
+    assert.deepEqual(state,G.normalizeSave({...old,souvenirs:{},activePlate:'plain'}).state);
+  }
+  let s={...G.newGame(),rice:1e4,totalRice:1e4,owned:{obaachan:10,tanbo:10},recipes:allRecipes};
+  for (const id of ['shio_musubi','omurice','rice_burger']) s=G.sendMeal(s,'engawa',id);
+  s=G.awardAchievements(G.selectPlate(s,'paw'));
+  const code=G.encodeSave(s);
+  assert.ok(code.startsWith('OMSB1|'));
+  const restored=G.decodeSave(code).state;
+  assert.equal(restored.v,2);
+  assert.deepEqual(restored.souvenirs,s.souvenirs);
+  assert.equal(restored.activePlate,'paw');
+  assert.equal(restored.rice,s.rice);
+  assert.equal(restored.unlocked.outing_first,true);
+  assert.equal(G.sendMeal({...restored,rice:1e9},'engawa','omurice').rice,1e9);
+  const lapsed=G.normalizeSave({v:2,souvenirs:{'home:omurice':true}}).state;
+  assert.equal(lapsed.souvenirs['home:omurice'],true, 'collections may outlive the facilities and recipes');
+  assert.equal(G.outingUnlocked(lapsed,'home'),true);
+  assert.equal(G.normalizeSave({v:2,souvenirs:{'engawa:omurice':false}}).state.souvenirs['engawa:omurice'],false);
+});
+
+test('invalid souvenir and plate saves are rejected', () => {
+  for (const souvenirs of [[],['engawa:omurice'],null,'engawa:omurice',1,{typo:true},{'engawa:typo':true},{'typo:omurice':true},{engawa:true},{'engawa:omurice':1},{'engawa:omurice':'true'},{'engawa:omurice':null}]) {
+    assert.throws(()=>G.normalizeSave({v:2,rice:100,souvenirs}));
+  }
+  const three={'engawa:shio_musubi':true,'engawa:omurice':true,'engawa:rice_burger':true};
+  for (const activePlate of [null,'',1,'missing','moon',{id:'paw'}]) {
+    assert.throws(()=>G.normalizeSave({v:2,souvenirs:three,activePlate}));
+  }
+  assert.throws(()=>G.normalizeSave({v:2,souvenirs:{...three,'engawa:omurice':false},activePlate:'paw'}), 'false records do not count');
+  assert.equal(G.normalizeSave({v:2,souvenirs:three,activePlate:'paw'}).state.activePlate,'paw');
+});
+
+test('outing achievements are stable and only strengthen regular support', () => {
+  const ids=['outing_first','outing_twelve','outing_all','outing_world'];
+  for (const id of ids) {
+    const a=G.ACHIEVEMENTS.find(x=>x.id===id);
+    assert.ok(a && a.name && a.desc && !a.legacy);
+  }
+  const cost=G.OUTINGS.reduce((sum,o)=>sum+o.cost*3,0);
+  const start=G.awardAchievements({...G.newGame(),rice:cost*2,owned:allOwned(),recipes:allRecipes,upgrades:{regular_cat:true}});
+  for (const id of ids) assert.equal(start.unlocked[id],undefined);
+  let s=start;
+  const at={};
+  // Fill one recipe across every destination first so "world" lands before "all".
+  const order=G.RECIPES.flatMap(r=>G.OUTINGS.map(o=>[o.id,r.id]));
+  order.forEach(([o,r],i)=>{
+    s=G.awardAchievements(G.sendMeal(s,o,r));
+    for (const id of ids) if (s.unlocked[id] && at[id]===undefined) at[id]=i+1;
+  });
+  assert.deepEqual(at,{outing_first:1,outing_world:9,outing_twelve:12,outing_all:27});
+  assert.equal(G.achievementCount(s),G.achievementCount(start)+4);
+  assert.ok(Math.abs(G.regularMultiplier(s)-(G.regularMultiplier(start)+4*.0025))<1e-12);
+  assert.ok(Math.abs(G.production(s)/G.production(start)-G.regularMultiplier(s)/G.regularMultiplier(start))<1e-12);
+  const partial=G.awardAchievements({...G.newGame(),souvenirs:Object.fromEntries(G.OUTINGS.slice(0,8).flatMap(o=>G.RECIPES.map(r=>[`${o.id}:${r.id}`,true])))});
+  assert.equal(partial.unlocked.outing_twelve,true);
+  assert.equal(partial.unlocked.outing_world,undefined, '24 cards at 8 places are not every destination');
+});
+
+test('an outing achievement earned mid-frenzy cannot change the frozen 777 snapshot', () => {
+  const s=G.awardAchievements({...G.newGame(),rice:1e6,totalRice:1e6,clicks:500,owned:{obaachan:10,suihanki:10},recipes:{omurice:true},upgrades:{finger_0:true,regular_cat:true}});
+  const boosts=G.addGoldenBoost({},'click',s,1000);
+  const sent=G.awardAchievements(G.sendMeal(s,'engawa','omurice'));
+  assert.equal(sent.unlocked.outing_first,true);
+  assert.ok(G.production(sent)>G.production(s));
+  assert.equal(G.activeClickPower(sent,boosts,1001),G.activeClickPower(s,boosts,1001));
+  assert.equal(G.activeClickPower(sent,boosts,14000),G.clickPower(sent));
+});

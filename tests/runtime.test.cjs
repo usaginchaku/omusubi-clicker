@@ -483,3 +483,80 @@ test('the expanded news reader retains the ten-page achievement and saves each t
   await runtime.press('閉じる'); runtime.pagehide();
   assert.equal(runtime.saved().newsClicks,10, 'closing does not count as turning a page');
 });
+
+const outingGame = () => ({...Game.newGame(), rice:10000, totalRice:10000, savedAt:1000,
+  owned:{obaachan:10}, recipes:Object.fromEntries(Game.RECIPES.map(r=>[r.id,true]))});
+async function openOutings(runtime, cooked=3) {
+  await runtime.press('図鑑'); await runtime.press(`料理 ${cooked}/3`);
+  await runtime.pressAria('おすそわけを開く');
+}
+
+test('delivery commits once before render and the collected postcard can be read for free', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),outingGame());
+  await openOutings(runtime); await runtime.pressAria('となりの縁側へ');
+  const send=runtime.button('届ける · 300 粒');
+  send.props.onClick(); send.props.onClick(); runtime.pagehide();
+  assert.equal(runtime.saved().rice,9700);
+  assert.equal(runtime.saved().souvenirs['engawa:shio_musubi'],true);
+  assert.equal(runtime.saved().unlocked.outing_first,true);
+  runtime.flush(); assert.match(runtime.screenText(),/塩加減、似てきたね/);
+  await runtime.press('‹ 届け先に戻る');
+  await runtime.pressAria('塩むすびの絵はがきを読む');
+  runtime.pagehide(); assert.equal(runtime.saved().rice,9700);
+});
+
+test('three deliveries earn a cosmetic plate, copy preserves it and import leaves the postcard scene', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),outingGame());
+  await openOutings(runtime); await runtime.pressAria('となりの縁側へ');
+  for(const recipe of Game.RECIPES) {
+    await runtime.pressAria(`${recipe.name}を届ける`);
+    if(recipe!==Game.RECIPES.at(-1)) await runtime.press('‹ 届け先に戻る');
+  }
+  assert.match(runtime.toasts(),/肉球のお皿をもらった/);
+  await runtime.press('肉球のお皿を使う'); runtime.pagehide();
+  assert.equal(runtime.saved().activePlate,'paw');
+  assert.equal(runtime.saved().rice,9100);
+  assert.equal(Game.postcardCount(runtime.saved()),3);
+  await runtime.press('セーブ'); await runtime.press('最新コードをコピー');
+  const code=runtime.clipboard[0];
+  assert.equal(Game.decodeSave(code).state.activePlate,'paw');
+  await runtime.importFile(new Blob([code])); await runtime.press('図鑑');
+  assert.match(runtime.screenText(),/お皿：肉球のお皿/);
+  assert.doesNotMatch(runtime.screenText(),/おむすびが背伸びしてる/);
+  runtime.pagehide(); assert.equal(runtime.saved().rice,9100);
+});
+
+test('missing rice and uncooked recipes cannot be delivered; an old save still reaches its recipe', async () => {
+  const old={...outingGame(),rice:299,recipes:{shio_musubi:true},upgrades:{shio:true}};
+  delete old.souvenirs; delete old.activePlate;
+  const runtime=createRuntime(await loadCompiledApp(),old);
+  await openOutings(runtime,1); await runtime.pressAria('となりの縁側へ');
+  assert.equal(runtime.button('届ける · 300 粒').props.disabled,true);
+  assert.equal(runtime.button('まず料理を作る').props.disabled,true);
+  assert.match(runtime.screenText(),/あと 1 粒/);
+  await runtime.press('‹ 届け先一覧'); await runtime.press('‹ レシピ');
+  await runtime.pressAria('塩むすびを見る'); runtime.pagehide();
+  assert.equal(runtime.saved().rice,299);
+  assert.deepEqual(runtime.saved().souvenirs,{});
+});
+
+test('every destination has three readable postcards and collection completion exposes the final plate', async () => {
+  const complete={...outingGame(),souvenirs:Object.fromEntries(Game.OUTINGS.flatMap(o=>Game.RECIPES.map(r=>[`${o.id}:${r.id}`,true])))};
+  const runtime=createRuntime(await loadCompiledApp(),complete);
+  await openOutings(runtime);
+  assert.match(runtime.screenText(),/27枚そろった/);
+  for(const outing of Game.OUTINGS) {
+    await runtime.pressAria(`${outing.name}へ`);
+    for(const recipe of Game.RECIPES) {
+      await runtime.pressAria(`${recipe.name}の絵はがきを読む`);
+      assert.match(runtime.screenText(),new RegExp(`${outing.name}より`));
+      assert.doesNotMatch(runtime.screenText(),/undefined/);
+      await runtime.press('‹ 届け先に戻る');
+    }
+    await runtime.press('‹ 届け先一覧');
+  }
+  await runtime.pressAria('宇宙の外の実家へ'); await runtime.pressAria('塩むすびの絵はがきを読む');
+  await runtime.press('虹のお皿を使う'); runtime.pagehide();
+  assert.equal(runtime.saved().activePlate,'rainbow');
+  assert.equal(runtime.saved().rice,10000);
+});

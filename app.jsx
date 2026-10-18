@@ -1,6 +1,80 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES } = Game;
+const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES, OUTINGS, PLATES } = Game;
+
+const OUTING_STORIES = {
+  engawa: { color: "#e9d7aa", sky: "#b6d3c5", lines: {
+    shio_musubi: "縁側に並んで、ひとくち。『塩加減、似てきたね』。おばあちゃんが、ちょっと得意そうだった。",
+    omurice: "ケチャップで名前を書いたら、おばあちゃんも自分の名前を書いた。二人とも、食べる前に写真を撮った。",
+    rice_burger: "『おむすびが背伸びしてる』。おばあちゃんは両手で持って、ちゃんと背伸びして食べた。",
+  } },
+  picnic: { color: "#a6bc78", sky: "#bddbd0", lines: {
+    shio_musubi: "かかしの分もひとつ。鳥たちは今日はお客さん。誰も追い払わない昼休み。",
+    omurice: "卵の黄色と稲穂の黄色。風が吹くたび、田んぼがおかわりを頼んでいる気がした。",
+    rice_burger: "『地産地消です』と田んぼが言った。上も下も、本人だった。",
+  } },
+  night: { color: "#7a97a4", sky: "#344563", lines: {
+    shio_musubi: "夜勤の店長が、やっと座った。『温かいの、久しぶり』。レジの音が少し遠くなった。",
+    omurice: "まかないの卵に『おつかれ』と書いた。店長はその文字のところを、最後に食べた。",
+    rice_burger: "パンの棚に置いたら、おむすびの棚から苦情が来た。店長が食べて、円満に解決した。",
+  } },
+  shrine: { color: "#80a399", sky: "#c8d8b0", lines: {
+    shio_musubi: "神様が一礼して、いただきます。お願い事は今日は後回し。いまは全員、お昼休み。",
+    omurice: "ケチャップのおみくじは『大吉』。神様は『大盛』と読み、しゃもじを持ってきた。",
+    rice_burger: "神様が手を合わせたあと、両手で挟んだ。ありがたみも具も、はみ出ていた。",
+  } },
+  moon: { color: "#9fadc6", sky: "#273653", lines: {
+    shio_musubi: "うさぎが月の石をひとつ、隣に置いた。『丸いのは私。三角はあなた』。並べて記念写真。",
+    omurice: "『満月を包んで持ってきたの？』。半分こしたら、月に上弦と下弦ができた。",
+    rice_burger: "無重力で中身が浮いた。うさぎが追いついた。食事が少しだけスポーツになった。",
+  } },
+  campus: { color: "#b6b79a", sky: "#b5d2de", lines: {
+    shio_musubi: "卒論を書き終えた学生が、三角を見て泣いた。『図形に見えない。ごはんに見える』。よく頑張った。",
+    omurice: "査読者2のコメントは『おいしい。卵の追加を推奨』。異論なしで採択された。",
+    rice_burger: "構造解析の授業が始まった。上の米、下の米。中間発表の前に、全員食べ終わった。",
+  } },
+  yesterday: { color: "#bdb1a4", sky: "#8f9eb8", lines: {
+    shio_musubi: "昨日、忙しくて食べそびれた自分に届けた。今日の自分が、少し元気になった気がする。",
+    omurice: "ケチャップで『明日もなんとかなる』。昨日の自分から『うん』と返事が来た。",
+    rice_burger: "昨日の自分がもう食べていた。『これ、明日ありがとうって言うね』。先にどういたしまして。",
+  } },
+  parallel: { color: "#b7a4bd", sky: "#596186", lines: {
+    shio_musubi: "どの世界のおばあちゃんも同じ形に握っていた。塩加減だけ、誰も譲らなかった。",
+    omurice: "片方の世界はとろとろ卵、もう片方は薄焼き卵。結論は『両方おかわり』で一致した。",
+    rice_burger: "パンが主食の世界と、米が主食の世界。昼ごはんだけで、国交が結ばれた。",
+  } },
+  home: { color: "#bfa88a", sky: "#303751", lines: {
+    shio_musubi: "宇宙をいくつも越えて、いつもの縁側。『おかえり』。今度は、こちらがおむすびを差し出した。",
+    omurice: "業務用の愛情じゃなくて、ひと皿ぶんだけ。名前を書いたら、おばあちゃんが笑った。",
+    rice_burger: "『こんなの作れるようになったんだね』。宇宙の外まで来て、いちばんうれしい感想をもらった。",
+  } },
+};
+const PLATE_COLORS = { plain: ["#d5e9df", "#789c95", "#b4cdc4"], paw: ["#f2d0be", "#c28b7c", "#eab8a3"], moon: ["#405574", "#b9c9de", "#334661"], rainbow: ["#ecdbea", "#bb98b5", "#dfcadd"] };
+
+function PostcardArt({ outing, recipeId }) {
+  const colors = OUTING_STORIES[outing.id];
+  const space = ["night", "moon", "parallel", "home", "yesterday"].includes(outing.id);
+  return <svg className="postcard-art" viewBox="0 0 320 176" role="img" aria-label={`${outing.name}の絵はがき`}>
+    <rect x="2" y="2" width="316" height="172" rx="12" fill={colors.sky} stroke="#ecdcc0" strokeWidth="4" />
+    {space ? <g fill="#fff0bc">{[[25,30],[88,19],[144,38],[209,20],[270,33],[294,71]].map(([x,y],i)=><circle key={i} cx={x} cy={y} r={i%2+1} />)}</g> : <><circle cx="268" cy="37" r="17" fill="#ffeba8" /><path d="M28 40h38m13-14h46" stroke="#f9f3da" strokeWidth="9" strokeLinecap="round" /></>}
+    <path d="M4 119Q62 101 130 120T316 116V170H4Z" fill={colors.color} />
+    {["engawa","parallel","home"].includes(outing.id) && <g stroke="#66544c" strokeWidth="3" strokeLinejoin="round">
+      <path d="M42 90h96v49H42Z" fill="#e4cda4" /><path d="m28 91 62-42 63 42Z" fill="#846b66" />
+      <rect x="63" y="101" width="35" height="29" fill="#f6e6af" /><path d="M80 101v29m-44 12h119m-109 0v12m94-12v12" fill="none" />
+      {outing.id === "parallel" && <g transform="translate(155 12) scale(.72)"><path d="M42 90h96v49H42Z" fill="#e4cda4" /><path d="m28 91 62-42 63 42Z" fill="#9d7ca1" /><rect x="63" y="101" width="35" height="29" fill="#f6e6af" /></g>}
+      {outing.id === "home" && <ellipse cx="90" cy="54" rx="76" ry="10" fill="none" stroke="#c9b8df" strokeDasharray="4 5" />}
+    </g>}
+    {outing.id === "picnic" && <g stroke="#648151" strokeWidth="3" strokeLinecap="round"><path d="M35 139v-32m20 32V98m20 41v-33m20 33v-36m20 36V96" /><path d="m29 112 6 7 6-10m8-6 6 8 6-11m8 12 6 7 6-9m8-2 6 7 6-10m8-3 6 7 6-11" stroke="#e9cc70" /><path d="M128 103v42m-14-25h28" stroke="#9b7252" strokeWidth="5" /><circle cx="128" cy="101" r="9" fill="#efd49d" /><path d="m113 94 15-10 15 10Z" fill="#ae8161" stroke="none" /></g>}
+    {outing.id === "night" && <g stroke="#8caaa5" strokeWidth="3"><rect x="31" y="72" width="128" height="73" rx="3" fill="#e4e0bc" /><path d="M28 78h134" stroke="#86b9ac" strokeWidth="14" /><rect x="44" y="99" width="37" height="34" fill="#ffd77d" /><rect x="97" y="96" width="46" height="49" fill="#e9c88b" /><path d="M120 97v47" /><path d="M44 112h37" /></g>}
+    {outing.id === "shrine" && <g stroke="#ae6452" strokeWidth="11" strokeLinecap="round"><path d="M45 70v81m95-81v81M29 65q63 15 126 0M32 91h120" /><path d="M92 73v18" strokeWidth="6" /><path d="M92 94v28" stroke="#e5cf94" strokeWidth="4" /></g>}
+    {outing.id === "moon" && <g><circle cx="75" cy="56" r="24" fill="#9dccd7" /><path d="M59 43q13-9 25 8l-9 20-15-7Z" fill="#97b98d" /><ellipse cx="70" cy="139" rx="36" ry="8" fill="#788ba8" /><path d="M95 121q-18-39-7-35 12 3 14 23 2-28 11-24 8 7-2 38" fill="#fff2db" /><ellipse cx="105" cy="130" rx="19" ry="18" fill="#fff2db" /><circle cx="111" cy="125" r="2" fill="#45566a" /></g>}
+    {outing.id === "campus" && <g stroke="#798389" strokeWidth="3" strokeLinejoin="round"><path d="M30 90h126v56H30Z" fill="#eee0bb" /><path d="m22 90 70-35 72 35Z" fill="#718a87" /><path d="M48 100v37m29-37v37m29-37v37m29-37v37" stroke="#baa987" strokeWidth="9" /><path d="M26 146h134" strokeWidth="7" /></g>}
+    {outing.id === "yesterday" && <g stroke="#e9d9b4" strokeWidth="4"><circle cx="89" cy="96" r="48" fill="#f4e7c7" /><circle cx="89" cy="96" r="40" fill="none" stroke="#a99d86" strokeDasharray="2 17" /><path d="M89 70v26l-23 12" fill="none" stroke="#596879" strokeLinecap="round" /><path d="M148 56q27 40 0 77m0-77 17 4m-17-4-5 16" fill="none" /></g>}
+    {recipeId && <svg x="175" y="82" width="134" height="86" viewBox="0 0 280 180"><MealArt id={recipeId} /></svg>}
+    <rect x="274" y="14" width="28" height="32" rx="3" fill="none" stroke="#f4e5c4" strokeWidth="2" strokeDasharray="3 2" />
+    <path d="m282 37 6-13 6 13Z" fill="#f4e5c4" />
+  </svg>;
+}
 
 const MEAL_STEPS = {
   shio_musubi: ["米をよそう", "きゅっと握る"],
@@ -13,12 +87,16 @@ const MEAL_REACTIONS = {
   rice_burger: { grandma: "パンを切らしてね。米ならあるから。", regular_cat: "上も米。下も米。信頼できます。", regular_cooker: "上の米と下の米、同じ釜の仲間です。", regular_rabbit: "無重力だと中身だけ先に出勤します。", regular_future: "未来ではこれをパンに分類します。" },
 };
 
-function MealArt({ id, stage = 3, decoration = 0 }) {
+function MealArt({ id, stage = 3, decoration = 0, plate = "plain" }) {
   const ready = stage >= 2;
+  const [rim, edge, center] = PLATE_COLORS[plate] || PLATE_COLORS.plain;
   return <svg className={`meal-art meal-stage-${stage}`} viewBox="0 0 280 180" role="img" aria-label={`${RECIPES.find(r => r.id === id)?.name || "料理"}${stage < 3 ? "を調理中" : "のできあがり"}${id === "omurice" && ready ? `、ケチャップは${["ハート", "米の字", "肉球"][decoration % 3]}` : ""}`}>
     <ellipse cx="140" cy="151" rx="112" ry="18" fill="#14232e" opacity=".5" />
-    <ellipse cx="140" cy="139" rx="112" ry="27" fill="#d5e9df" stroke="#789c95" strokeWidth="3" />
-    <ellipse cx="140" cy="137" rx="91" ry="17" fill="#b4cdc4" />
+    <ellipse cx="140" cy="139" rx="112" ry="27" fill={rim} stroke={edge} strokeWidth="3" />
+    <ellipse cx="140" cy="137" rx="91" ry="17" fill={center} />
+    {plate === "paw" && <g fill="#b6786d">{[55,225].map(x=><g key={x}><ellipse cx={x} cy="142" rx="7" ry="4" /><circle cx={x-7} cy="135" r="2.5" /><circle cx={x} cy="132" r="2.5" /><circle cx={x+7} cy="135" r="2.5" /></g>)}</g>}
+    {plate === "moon" && <g fill="#f5dfa1">{[[50,138],[73,149],[220,140],[203,152],[143,159]].map(([x,y],i)=><path key={i} d={`M${x} ${y-4}l2 3 4 1-4 1-2 3-1-3-4-1 4-1Z`} />)}</g>}
+    {plate === "rainbow" && <g fill="none" strokeWidth="3">{["#d4888e","#e1b565","#9fc28e","#89b8c8","#b69bce"].map((c,i)=><path key={c} d={`M${39+i*4} ${144-i}Q140 ${179-i*4} ${241-i*4} ${144-i}`} stroke={c} />)}</g>}
     {stage === 0 ? <g fill="#fff4d5" stroke="#c8c8a7" strokeWidth="1.5">{[[-24,0],[-9,-8],[8,-2],[24,3],[-17,11],[0,12],[17,13]].map(([x,y],i) => <ellipse key={i} cx={140+x} cy={119+y} rx="10" ry="5" transform={`rotate(${i*37} ${140+x} ${119+y})`} />)}</g> : id === "shio_musubi" ? <g strokeLinejoin="round">
       <path d="M127 46Q140 26 153 46L200 122Q211 144 185 145H95Q69 144 80 122Z" fill="#fff7dd" stroke="#c6ceb8" strokeWidth="3" />
       {[[-18,0],[15,-10],[-29,26],[32,30],[0,-24],[-7,17]].map(([x,y],i) => <ellipse key={i} cx={140+x} cy={84+y} rx="5" ry="2.5" fill="#e6dfc5" transform={`rotate(${i*31} ${140+x} ${84+y})`} />)}
@@ -336,6 +414,9 @@ function OnigiriClicker() {
   const [collectionTab, setCollectionTab] = useState("achievements");
   const [regularLines, setRegularLines] = useState({});
   const [kitchen, setKitchen] = useState(null);
+  const [outingView, setOutingView] = useState(false);
+  const [selectedOuting, setSelectedOuting] = useState(null);
+  const [postcard, setPostcard] = useState(null);
   const [lastGain, setLastGain] = useState(null);
   const [newsOpen, setNewsOpen] = useState(false);
   const [achFilter, setAchFilter] = useState("all");
@@ -418,6 +499,30 @@ function OnigiriClicker() {
   const selectedRecipe = kitchen && RECIPES.find(r => r.id === kitchen.id);
   const diners = [{ id: "grandma", name: "おばあちゃん" }, ...REGULARS.filter(r => upgrades[r.id])];
   const diner = diners[(kitchen?.diner || 0) % diners.length];
+  const cardCount = Game.postcardCount(game);
+  const totalCards = OUTINGS.length * RECIPES.length;
+  const plate = PLATES.find(p => p.id === game.activePlate) || PLATES[0];
+  const nextPlate = PLATES.find(p => p.need > cardCount);
+  const outing = OUTINGS.find(o => o.id === selectedOuting);
+  const postcardRecipe = postcard && RECIPES.find(r => r.id === postcard);
+
+  function openOutings() {
+    setOutingView(true); setSelectedOuting(null); setPostcard(null);
+  }
+
+  function deliverMeal(recipeId) {
+    let delivered = false;
+    const next = setGame(s => {
+      const sent = Game.sendMeal(s, outing.id, recipeId);
+      delivered = sent !== s;
+      return sent;
+    });
+    if (delivered) {
+      setPostcard(recipeId);
+      const earnedPlate = PLATES.find(p => p.need === Game.postcardCount(next));
+      pushToast(earnedPlate ? `${earnedPlate.name}をもらった！` : "絵はがきが届きました");
+    }
+  }
 
   const pushToast = useCallback(msg => {
     const id = pid.current++;
@@ -651,6 +756,7 @@ function OnigiriClicker() {
       setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
       scheduleGolden.current?.();
       setParticles([]); setNotice(""); setKitchen(null); setLastGain(null);
+      setOutingView(false); setSelectedOuting(null); setPostcard(null);
       blocked.current = false;
       setStorageError("");
       try {
@@ -716,7 +822,7 @@ function OnigiriClicker() {
             {[['shop','ショップ'],['collection','図鑑'],['skin','きせかえ'],['save','セーブ']].map(([id,label]) =>
               <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
           </nav>
-          <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}`}>
+          <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}-${outingView}-${selectedOuting}-${postcard}`}>
           {tab === "shop" && <>
             <div className="shop-controls"><div className="subnav" aria-label="ショップの種類">
               <button className={shopTab === "buildings" ? "selected" : ""} aria-pressed={shopTab === "buildings"} onClick={() => setShopTab("buildings")}>施設</button>
@@ -760,9 +866,48 @@ function OnigiriClicker() {
               {shownAchievements.length === 0 && <p className="empty-state">これから最初のひとつを。</p>}
               {shownAchievements.map(a => <div key={a.id} className={`ach-item ${unlocked[a.id] ? "done" : "locked"}`}><AchIcon id={a.id} done={!!unlocked[a.id]} /><div><div className="ach-name">{a.secret && !unlocked[a.id] ? "ひみつの実績" : a.name}</div><div className="ach-desc">{a.secret && !unlocked[a.id] ? "いつもと違うところに、何かある。" : a.desc}{a.legacy ? " · 旧工房の記念" : ""}{a.building && !unlocked[a.id] && ` · 所持 ${owned[a.building] || 0}/${a.need}`}</div></div>{unlocked[a.id] && <span className="ach-check" aria-label="達成">✓</span>}</div>)}
             </> : collectionTab === "recipes" ? <>
+              {outingView ? <div className="outings">
+                <div className="outing-heading"><button onClick={() => {
+                  if (postcard) setPostcard(null);
+                  else if (outing) setSelectedOuting(null);
+                  else { setOutingView(false); setKitchen(null); }
+                }}>{postcard ? "‹ 届け先に戻る" : outing ? "‹ 届け先一覧" : "‹ レシピ"}</button><span>絵はがき {cardCount}/{totalCards}</span></div>
+                {postcardRecipe && outing ? <article className="postcard">
+                  <PostcardArt outing={outing} recipeId={postcardRecipe.id} />
+                  <div className="postcard-letter"><h2>{outing.name}より</h2><span>{postcardRecipe.name}</span><p>{OUTING_STORIES[outing.id].lines[postcardRecipe.id]}</p></div>
+                  {PLATES.filter(p => p.need > 0 && p.need <= cardCount).slice(-1).filter(p => p.id !== plate.id).map(p => <button className="plate-use" key={p.id} onClick={() => { setGame(s => Game.selectPlate(s, p.id)); pushToast(`${p.name}に替えました`); }}>{p.name}を使う</button>)}
+                </article> : outing ? <>
+                  <h2 className="outing-title">{outing.name}</h2>
+                  <PostcardArt outing={outing} />
+                  {RECIPES.map(r => {
+                    const sent = game.souvenirs?.[`${outing.id}:${r.id}`] === true;
+                    const ready = (owned[outing.building] || 0) >= outing.need;
+                    return <div className="delivery-row" key={r.id}><MealArt id={r.id} plate={plate.id} /><div><h3>{r.name}</h3>
+                      {sent ? <button aria-label={`${r.name}の絵はがきを読む`} onClick={() => setPostcard(r.id)}>絵はがきを読む</button> : recipes[r.id] ? <>
+                        <button aria-label={`${r.name}を届ける`} disabled={!ready || rice < outing.cost} onClick={() => deliverMeal(r.id)}>届ける · {fmt(outing.cost)} 粒</button>
+                        {!ready ? <p className="recipe-cost">{BUILDINGS.find(b => b.id === outing.building).name} {outing.need}必要</p> : rice < outing.cost && <p className="recipe-cost">あと {fmt(Math.ceil(outing.cost - rice))} 粒</p>}
+                      </> : <button aria-label={`${r.name}のレシピへ`} disabled={!Game.recipeUnlocked(game, r.id)} onClick={() => { setOutingView(false); setKitchen({ id: r.id, step: 0, diner: 0, decoration: 0 }); }}>まず料理を作る</button>}
+                    </div></div>;
+                  })}
+                </> : <>
+                  {nextPlate ? <p className="collection-reward">あと {nextPlate.need - cardCount}枚で「{nextPlate.name}」</p> : <p className="collection-reward">27枚そろった！ どこへでも、また読みに行ける。</p>}
+                  {OUTINGS.map(o => {
+                    const known = Game.outingUnlocked(game, o.id);
+                    const count = RECIPES.filter(r => game.souvenirs?.[`${o.id}:${r.id}`] === true).length;
+                    const building = BUILDINGS.find(b => b.id === o.building);
+                    return <button className={`outing-card ${count === RECIPES.length ? "complete" : ""}`} key={o.id} aria-label={`${o.name}へ`} disabled={!known} onClick={() => setSelectedOuting(o.id)}>
+                      <PostcardArt outing={o} /><span><b>{o.name}</b><small>{known ? `絵はがき ${count}/${RECIPES.length}` : `${building.name} ${owned[o.building] || 0}/${o.need}`}</small></span><span aria-hidden="true">{count === RECIPES.length ? "✓" : known ? "›" : "—"}</span>
+                    </button>;
+                  })}
+                </>}
+              </div> : <>
+              {!selectedRecipe && <>
+                <button className="outing-summary" aria-label="おすそわけを開く" onClick={openOutings}><b>おすそわけ</b><span>絵はがき {cardCount}/{totalCards} ›</span></button>
+                <details className="plate-picker"><summary>お皿：{plate.name}</summary><div>{PLATES.map(p => <button key={p.id} aria-pressed={p.id === plate.id} disabled={cardCount < p.need} onClick={() => setGame(s => Game.selectPlate(s, p.id))}><span className={`plate-swatch ${p.id}`} style={{ background: PLATE_COLORS[p.id][0], borderColor: PLATE_COLORS[p.id][1] }} aria-hidden="true" /><span>{p.name}<small>{cardCount < p.need ? `絵はがき ${p.need}枚` : p.id === plate.id ? "使用中" : "使う"}</small></span></button>)}</div></details>
+              </>}
               {selectedRecipe ? <div className="kitchen">
                 <div className="kitchen-heading"><button onClick={() => setKitchen(null)}>‹ 料理一覧</button><h2>{selectedRecipe.name}</h2><span>{kitchen.step === 3 ? "完成" : `${kitchen.step + 1}/3`}</span></div>
-                <MealArt id={selectedRecipe.id} stage={kitchen.step} decoration={kitchen.decoration} />
+                <MealArt id={selectedRecipe.id} stage={kitchen.step} decoration={kitchen.decoration} plate={plate.id} />
                 {kitchen.step < 3 ? <>
                   <p className="recipe-cost">完成時に {fmt(selectedRecipe.cost)} 粒使う</p>
                   {kitchen.step < 2 ? <button className="cook-action" onClick={() => setKitchen(k => ({ ...k, step: Math.min(kitchen.step + 1, 2) }))}>{MEAL_STEPS[selectedRecipe.id][kitchen.step]}</button> : <button className="cook-action" disabled={rice < selectedRecipe.cost} onClick={() => {
@@ -782,15 +927,17 @@ function OnigiriClicker() {
                   <div className="recipe-complete">✓ 図鑑に記録済み</div>
                   <div className="meal-reaction"><b>{diner.name}</b><p>「{MEAL_REACTIONS[selectedRecipe.id][diner.id]}」</p></div>
                   <div className="meal-actions">{diners.length > 1 && <button onClick={() => setKitchen(k => ({ ...k, diner: k.diner + 1 }))}>感想を聞く</button>}{selectedRecipe.id === "omurice" && <button onClick={() => setKitchen(k => ({ ...k, decoration: k.decoration + 1 }))}>ケチャップで描く</button>}</div>
+                  <button className="outing-summary" onClick={openOutings}><b>おすそわけへ</b><span>{cardCount}/{totalCards} ›</span></button>
                 </>}
               </div> : RECIPES.map(r => {
                 const known = Game.recipeUnlocked(game, r.id), done = recipes[r.id];
                 return <div className={`recipe-card ${done ? "cooked" : ""}`} key={r.id}>
-                  <MealArt id={r.id} stage={3} />
+                  <MealArt id={r.id} stage={3} plate={plate.id} />
                   <div><h2>{r.name}</h2><p className="recipe-cost">{done ? "✓ 図鑑に記録済み" : known ? `試作に使う米 ${fmt(r.cost)} 粒` : r.hint}</p>
                   <button aria-label={`${r.name}${done ? "を見る" : "を作る"}`} disabled={!known} onClick={() => setKitchen({ id: r.id, step: done ? 3 : 0, diner: 0, decoration: 0 })}>{done ? "料理を見る" : known ? "作ってみる" : "未解放"}</button></div>
                 </div>;
               })}
+              </>}
             </> : collectionTab === "regulars" ? <>
               <div className="regular-total"><span>実績 {activeAchievements}個</span><b>全生産 +{Number(regularBonus.toFixed(2))}%</b></div>
               {REGULARS.map(r => {
@@ -829,7 +976,7 @@ function OnigiriClicker() {
               <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
               {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
             </details>
-            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>料理の「おすそわけ」は、施設を育てると届け先が増えます。作った料理を米粒で届けると、場所と料理ごとに1枚、全27枚の絵はがきが届きます。3・12・27枚でお皿を獲得。お皿は見た目だけが変わり、読み返しや付け替えは無料です。期限はありません。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>
         </section>
