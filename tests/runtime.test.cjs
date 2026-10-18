@@ -26,7 +26,7 @@ function loadCompiledApp() {
 
 // Exercise the real event handlers and effects while controlling suspension.
 // State setters queue work until flush(), so pagehide can occur before a render.
-function createRuntime(code, initialState) {
+function createRuntime(code, initialState, random = Math.random) {
   let now = initialState.savedAt;
   let hookIndex = 0;
   let component;
@@ -48,6 +48,7 @@ function createRuntime(code, initialState) {
     removeEventListener(name, callback) { listeners.get(name)?.delete(callback); },
   };
   const context = vm.createContext({
+    Math: Object.create(Math, { random: { value: random } }),
     Date: class extends Date { static now() { return now; } },
     btoa,
     atob,
@@ -133,12 +134,58 @@ function createRuntime(code, initialState) {
       flush();
     },
     flush,
+    chooseQuantity(quantity) {
+      const button = find(tree, node => node.type === 'button' && node.props['aria-label'] === `${quantity}個ずつ購入`);
+      assert.ok(button);
+      button.props.onClick();
+      flush();
+    },
+    spawnGolden() {
+      const timer = [...timeouts.values()].find(timer => timer.delay >= 25000 && timer.delay <= 45000);
+      assert.ok(timer, 'a natural golden spawn is scheduled');
+      timer.callback();
+      flush();
+    },
+    claimGolden() {
+      const button = find(tree, node => node.type === 'button' && node.props['aria-label'] === '金のおむすびをつかまえる');
+      assert.ok(button);
+      button.props.onClick();
+    },
+    caption() {
+      const caption = find(tree, node => node.props?.className === 'play-caption');
+      const text = node => node == null ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
+      return text(caption);
+    },
     saved: () => Game.decodeSave(storage.get(storageKey)).state,
     resumed: () => vm.runInContext('loadInitialGame().state', context),
   };
 }
 
 const startingGame = () => ({ ...Game.newGame(), rice: 100, totalRice: 100, owned: { obaachan: 1 }, savedAt: 1000 });
+
+test('next purchase hint follows the selected bulk quantity and never promises an unaffordable buy', async () => {
+  const runtime=createRuntime(await loadCompiledApp(), {...Game.newGame(),rice:15,totalRice:15,savedAt:1000});
+  assert.match(runtime.caption(),/迎えられます/);
+  runtime.chooseQuantity(10);
+  assert.match(runtime.caption(),/10人.*あと 293 粒/);
+  assert.doesNotMatch(runtime.caption(),/迎えられます/);
+  runtime.chooseQuantity(1);
+  assert.match(runtime.caption(),/迎えられます/);
+});
+
+test('golden harvest settles production before computing the bounded reward and immediately saves it', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame(),()=>0.1);
+  runtime.advance(35000);
+  runtime.spawnGolden();
+  runtime.claimGolden();
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,147.5, '100 initial + 17.5 production + 30 golden reward');
+  assert.equal(runtime.saved().goldenClicks,1);
+  runtime.flush();
+  runtime.tick();
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,147.5, 'rendering and saving do not repeat the reward');
+});
 
 test('pagehide settles ten suspended minutes before saving and never credits them twice', async () => {
   const runtime = createRuntime(await loadCompiledApp(), startingGame());

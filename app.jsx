@@ -320,6 +320,10 @@ function OnigiriClicker() {
   const shownAchievements = achievements.filter(a => achFilter === "all" || (achFilter === "done" ? unlocked[a.id] : !unlocked[a.id]));
   const visibleBuildings = BUILDINGS.filter((b, i) => i === 0 || totalRice >= b.baseCost * 0.25 || owned[b.id] > 0);
   const nextBuilding = BUILDINGS.find(b => !visibleBuildings.includes(b));
+  const firstUnowned = visibleBuildings.find(b => !owned[b.id]);
+  const goalCost = firstUnowned ? Game.buildingPrice(game, firstUnowned, quantity) : 0;
+  const featuredUpgrade = availableUpgrades[0];
+  const nextFinger = UPGRADES.find(u => u.kind === "finger" && clicks < u.clickNeed && !upgrades[u.id]);
 
   const pushToast = useCallback(msg => {
     const id = pid.current++;
@@ -378,7 +382,7 @@ function OnigiriClicker() {
       const speedup = gameRef.current.activeSkin === "sekihan" ? 0.75 : 1;
       timer = setTimeout(() => {
         setGolden({ x: 8 + Math.random() * 65, y: 8 + Math.random() * 48 });
-        goldTimer.current = setTimeout(() => setGolden(null), 10000);
+        goldTimer.current = setTimeout(() => setGolden(null), 15000);
         schedule();
       }, (25000 + Math.random() * 20000) * speedup);
     };
@@ -414,12 +418,15 @@ function OnigiriClicker() {
     setGolden(null);
     clearTimeout(goldTimer.current);
     const roll = Math.random();
-    setGame(s => ({ ...s, goldenClicks: s.goldenClicks + 1 }));
     if (roll < 0.45) {
-      const bonus = Math.max(baseCps * 120, Game.clickPower(game) * 100, 100);
-      setGame(s => ({ ...s, rice: s.rice + bonus, totalRice: s.totalRice + bonus }));
+      let bonus;
+      setGame(s => {
+        bonus = Game.goldenHarvest(s);
+        return { ...s, goldenClicks: s.goldenClicks + 1, rice: s.rice + bonus, totalRice: s.totalRice + bonus };
+      });
       pushToast(`豊作！ ${fmt(bonus)} 粒、どこからともなく届いた。`);
     } else {
+      setGame(s => ({ ...s, goldenClicks: s.goldenClicks + 1 }));
       const kind = roll < 0.8 ? "production" : "click";
       boostRef.current = { kind, until: Date.now() + (kind === "production" ? 30000 : 12000) };
       setBoost(boostRef.current);
@@ -489,7 +496,7 @@ function OnigiriClicker() {
             {golden && <button className="golden" style={{ left: `${golden.x}%`, top: `${golden.y}%` }} onClick={clickGolden} aria-label="金のおむすびをつかまえる">🍙<span>金！</span></button>}
           </div>
           <div className="play-caption">
-            {remaining > 0 ? <span className="boost-label">{boost.kind === "production" ? "炊飯祭り ×7" : "神の手 クリック×77"} · あと{remaining}秒</span> : clicks < 10 ? "おむすびをタップして、最初の15粒を。" : activeSkin !== "plain" ? `${skin.name} · ${skin.ability}` : "握るほど、世界がちょっとおかしくなる。"}
+            {remaining > 0 ? <span className="boost-label">{boost.kind === "production" ? "炊飯祭り ×7" : "神の手 クリック×77"} · あと{remaining}秒</span> : firstUnowned ? <span className={rice >= goalCost ? "goal-ready" : ""}>{firstUnowned.name}{quantity > 1 ? ` ${quantity}${firstUnowned.unit}` : ""} {rice >= goalCost ? "を迎えられます！" : `まで、あと ${fmt(Math.ceil(goalCost - rice))} 粒`}</span> : nextFinger ? `あと ${fmt(nextFinger.clickNeed - clicks)} 回握ると、新しい指の強化が解放` : `${skin.name} · ${skin.ability}`}
           </div>
           <button className="news" aria-label="米ニュースをめくる" onClick={() => { setNewsIndex(n => n + 1); setGame(s => ({ ...s, newsClicks: s.newsClicks + 1 })); }}>
             <span className="news-label">米ニュース <span aria-hidden="true">↻</span></span>
@@ -505,24 +512,30 @@ function OnigiriClicker() {
           </nav>
           <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}`}>
           {tab === "shop" && <>
-            <div className="subnav" aria-label="ショップの種類">
+            <div className="shop-controls"><div className="subnav" aria-label="ショップの種類">
               <button className={shopTab === "buildings" ? "selected" : ""} aria-pressed={shopTab === "buildings"} onClick={() => setShopTab("buildings")}>施設</button>
               <button className={shopTab === "upgrades" ? "selected" : ""} aria-pressed={shopTab === "upgrades"} onClick={() => setShopTab("upgrades")}>強化 {affordableUpgrades > 0 && <span className="count-badge">{affordableUpgrades}</span>}</button>
-            </div>
+            </div>{shopTab === "buildings" && <div className="quantity" aria-label="購入数">{Game.PURCHASE_QUANTITIES.map(n => <button key={n} aria-label={`${n}個ずつ購入`} aria-pressed={quantity === n} onClick={() => setQuantity(n)}>{n}</button>)}</div>}</div>
             {shopTab === "buildings" ? <>
-              <div className="shop-toolbar"><span>持っているだけで米粒を生産</span><div className="quantity" aria-label="購入数">{Game.PURCHASE_QUANTITIES.map(n => <button key={n} aria-label={`${n}個ずつ購入`} aria-pressed={quantity === n} onClick={() => setQuantity(n)}>{n}</button>)}</div></div>
+              {featuredUpgrade && <button className={`featured-upgrade ${rice >= featuredUpgrade.cost ? "affordable" : ""}`} disabled={rice < featuredUpgrade.cost} onClick={() => buyUpgrade(featuredUpgrade)}>
+                <span className="shop-body"><span className="shop-name"><span className="upgrade-label">強化</span> {featuredUpgrade.name}</span><span className="production">{featuredUpgrade.desc}</span></span>
+                <span className="shop-cost">{fmt(featuredUpgrade.cost)} 粒</span>
+              </button>}
               {visibleBuildings.map(b => {
                 const n = owned[b.id] || 0, cost = Game.buildingPrice(game, b, quantity);
                 const rate = b.cps * Game.buildingMultiplier(game, b.id) * Game.skinCps(activeSkin);
-                return <button key={b.id} className={`shop-item ${rice >= cost ? "affordable" : ""}`} disabled={rice < cost} onClick={() => buy(b)}>
+                const milestone = Game.nextBuildingUpgrade(game, b.id);
+                return <button key={b.id} className={`shop-item building-item ${rice >= cost ? "affordable" : ""}`} disabled={rice < cost} onClick={() => buy(b)}>
                   <span className="shop-icon" aria-hidden="true">{b.icon}</span>
                   <span className="shop-body"><span className="shop-name">{b.name}</span><span className="shop-desc">{b.desc}</span><span className="production">1{b.unit}で毎秒 {fmtCps(rate)} 粒</span></span>
                   <span className="shop-meta"><span className="shop-cost">{fmt(cost)} 粒</span><span className="shop-owned">所持 {n}{b.unit}</span>{quantity > 1 && <span className="shop-desc">{quantity}{b.unit}購入</span>}</span>
+                  {milestone && <span className="building-milestone"><span>{milestone.need}{b.unit}で次の強化解放</span><span className="milestone-track" aria-hidden="true"><span style={{width:`${n / milestone.need * 100}%`}} /></span></span>}
                 </button>;
               })}
               {nextBuilding && <div className="next-building"><span>？ 次の施設</span><span>累計 {fmt(nextBuilding.baseCost * 0.25)} 粒で発見</span></div>}
             </> : <>
               <p className="panel-help">具材でクリック強化。施設を増やすと、その施設の強化も解放。</p>
+              {nextFinger && <p className="finger-goal">あと{fmt(nextFinger.clickNeed - clicks)}回握ると「{nextFinger.name}」が解放</p>}
               {availableUpgrades.length === 0 && <div className="empty-state">まずは米粒を集めよう。累計20粒で最初の強化が見つかるよ。</div>}
               {availableUpgrades.map(u => <button key={u.id} className={`shop-item upgrade-item ${rice >= u.cost ? "affordable" : ""}`} disabled={rice < u.cost} onClick={() => buyUpgrade(u)}>
                 <span className="shop-icon" aria-hidden="true">{u.icon}</span><span className="shop-body"><span className="shop-name">{u.name}</span><span className="production">{u.desc}</span><span className="shop-desc">{u.flavor}</span></span><span className="shop-cost">{fmt(u.cost)} 粒</span>

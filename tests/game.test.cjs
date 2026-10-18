@@ -70,8 +70,36 @@ test('facility upgrades require ownership, double only their facility, and canno
 test('click upgrades and production-linked fingers combine with skin bonuses', () => {
   const s={...G.newGame(),owned:{suihanki:10},upgrades:{shio:true,finger_0:true},activeSkin:'panda'};
   assert.equal(G.production(s),40);
-  assert.equal(G.clickPower(s),2.4*1.1);
+  assert.equal(G.clickPower(s),2.8*1.1);
   assert.equal(G.upgradeAvailable({...s,clicks:0},G.UPGRADES.find(u=>u.id==='finger_1')),false);
+});
+
+test('100 clicks open an early affordable skill, and finger skills keep manual play useful later', () => {
+  const first=G.UPGRADES.find(u=>u.id==='finger_0');
+  const opening={...G.newGame(),rice:500,clicks:99,owned:{suihanki:2,tanbo:1}};
+  assert.equal(G.buyUpgrade(opening,first.id),opening);
+  const bought=G.buyUpgrade({...opening,clicks:100},first.id);
+  assert.equal(bought.rice,0);
+  assert.ok(G.clickPower(bought)>G.clickPower(opening)*1.5);
+  const late={...G.newGame(),owned:{moon:10},upgrades:Object.fromEntries([0,1,2,3].map(i=>[`finger_${i}`,true]))};
+  assert.ok(G.clickPower(late)*2 >= G.production(late)*.4, 'two clicks per second add at least 40% to late production');
+  assert.equal(G.decodeSave(G.encodeSave(bought)).state.upgrades.finger_0,true);
+});
+
+test('golden harvest stays modest when broke and is bounded by savings and production', () => {
+  assert.equal(G.goldenHarvest(G.newGame()),13);
+  const busy={...G.newGame(),rice:0,owned:{moon:100}};
+  assert.equal(G.goldenHarvest(busy),13, 'large factories do not give a huge free refill after spending');
+  assert.equal(G.goldenHarvest({...busy,rice:1000}),163);
+  const saver={...G.newGame(),rice:1e9,owned:{obaachan:1}};
+  assert.equal(G.goldenHarvest(saver),43, 'large savings cannot bypass a small production base');
+});
+
+test('building milestones advance through real unlock thresholds and finish at fifty', () => {
+  for(const [owned,need] of [[0,1],[1,10],[9,10],[10,25],[25,50]]) {
+    assert.equal(G.nextBuildingUpgrade({...G.newGame(),owned:{obaachan:owned}},'obaachan').need,need);
+  }
+  assert.equal(G.nextBuildingUpgrade({...G.newGame(),owned:{obaachan:50}},'obaachan'),undefined);
 });
 
 test('skins charge once and preserve production when changing back', () => {

@@ -139,12 +139,15 @@ UPGRADES.push(
   { id: "mayo", name: "マヨネーズの永久機関", cost: 2e13, mult: 3, icon: "♾️", kind: "click", desc: "クリック力 ×3", flavor: "物理学者が匙を投げた。マヨをすくえた。" },
   { id: "love", name: "愛情（業務用）", cost: 4e16, mult: 5, icon: "♥", kind: "click", desc: "クリック力 ×5", flavor: "18リットル缶入り。愛は量れる。" },
 );
-for (const [i, clicks, cost, name, flavor] of [
-  [0, 100, 1500, "指先に田んぼ", "手相に用水路がある。"],
-  [1, 500, 150000, "十指がおばあちゃん", "全員に食べたか聞かれる。"],
-  [2, 1500, 15e6, "手のひら炊飯革命", "握手すると炊ける。"],
-  [3, 5000, 15e9, "この手が米宇宙", "手を洗うと銀河が流れる。"],
-]) UPGRADES.push({ id: `finger_${i}`, name, flavor, kind: "finger", cost, clickNeed: clicks, share: 0.01, icon: "✋", desc: "1クリックに毎秒生産の1%を追加" });
+for (const [i, clicks, cost, percent, name, flavor] of [
+  [0, 100, 500, 2, "指先に田んぼ", "手相に用水路がある。"],
+  [1, 500, 50000, 3, "十指がおばあちゃん", "全員に食べたか聞かれる。"],
+  [2, 1500, 5e6, 5, "手のひら炊飯革命", "握手すると炊ける。"],
+  [3, 5000, 5e9, 10, "この手が米宇宙", "手を洗うと銀河が流れる。"],
+]) UPGRADES.push({ id: `finger_${i}`, name, flavor, kind: "finger", cost, clickNeed: clicks, share: percent / 100, icon: "✋", desc: `1クリックに毎秒生産の${percent}%を追加` });
+// Ingredient multipliers affect the base amount; production-linked fingers are
+// added afterwards. Describe that distinction instead of promising twice the total.
+UPGRADES.filter(u => u.kind === "click").forEach(u => { u.desc = u.desc.replace("クリック力", "基本のクリック力"); });
 
 const BUILDING_UPGRADE_FLAVORS = {
   obaachan: ["券に有効期限を書かない優しさ。", "議題：ちゃんと食べてる？", "レシピの単位が全部『このくらい』。", "分家という概念を認めない。"],
@@ -253,6 +256,14 @@ function clickPower(s) {
   const share = UPGRADES.filter(u => u.kind === "finger" && s.upgrades[u.id]).reduce((p, u) => p + u.share, 0);
   return (multiplier + production(s) * share) * skinClick(s.activeSkin);
 }
+// A small windfall rewards saving without letting one early lucky click buy
+// several tiers of facilities. Temporary multipliers never inflate this payout.
+function goldenHarvest(s) {
+  return 13 + Math.floor(Math.min(s.rice * 0.15, production(s) * 60));
+}
+function nextBuildingUpgrade(s, id) {
+  return UPGRADES.find(u => u.building === id && !s.upgrades[u.id] && u.need > (s.owned[id] || 0));
+}
 function upgradeAvailable(s, u) {
   if (s.upgrades[u.id]) return false;
   if (u.kind === "building") return (s.owned[u.building] || 0) >= u.need;
@@ -360,7 +371,7 @@ function offlineProgress(s, now) {
 }
 
 return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame,
-  production, clickPower, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
+  production, clickPower, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();
 if (typeof module !== "undefined") module.exports = Game;
