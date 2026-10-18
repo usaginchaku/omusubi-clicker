@@ -151,7 +151,7 @@ UPGRADES.filter(u => u.kind === "click").forEach(u => { u.desc = u.desc.replace(
 
 UPGRADES.push(
   { id: "lucky_cat", kind: "golden", name: "招きむすび", cost: 7777, goldenNeed: 7, wait: 0.8, lifetime: 2, icon: "🍙", desc: "金の待ち時間 −20%・出現時間 ×2", flavor: "右手は米を、左手も米を招く。" },
-  { id: "lucky_thermos", kind: "golden", name: "神様の保温ジャー", cost: 777777, goldenNeed: 27, duration: 2, icon: "🍚", desc: "炊飯祭りと神の手の効果時間 ×2", flavor: "ご利益は、温かいうちに。" },
+  { id: "lucky_thermos", kind: "golden", name: "神様の保温ジャー", cost: 777777, goldenNeed: 27, duration: 2, icon: "🍚", desc: "神の手（クリック777倍）の効果時間 ×2", flavor: "ご利益は、温かいうちに。" },
   { id: "lucky_schedule", kind: "golden", name: "七福神のシフト表", cost: 77777777, goldenNeed: 77, wait: 0.8, lifetime: 2, icon: "⛩️", desc: "金の待ち時間をさらに −20%・出現時間 ×2", flavor: "全員、まかない目当てで出勤。" },
 );
 
@@ -245,7 +245,7 @@ const CHAPTERS = [
 const chapterFor = total => CHAPTERS.filter(c => total >= c.at).at(-1);
 
 function newGame() {
-  return { v: 2, rice: 0, totalRice: 0, clicks: 0, owned: {}, upgrades: {}, goldenClicks: 0,
+  return { v: 2, rice: 0, totalRice: 0, clicks: 0, owned: {}, upgrades: {}, goldenClicks: 0, goldenMisses: 0,
     unlocked: {}, skinsOwned: { plain: true }, activeSkin: "plain", secret: false,
     newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [] };
 }
@@ -274,10 +274,32 @@ function goldenSettings(s) {
 function boostMultiplier(boosts, kind, now) {
   return boosts[kind] > now ? GOLDEN_EFFECTS[kind].multiplier : 1;
 }
+function goldenDuration(s, kind) {
+  return GOLDEN_EFFECTS[kind].seconds * (kind === "click" ? goldenSettings(s).duration : 1);
+}
+function goldenOutcome(s, roll) {
+  // A bounded dry spell preserves surprise without leaving unlucky players
+  // waiting indefinitely. Keep the original 8% chance; the 16th-catch guarantee
+  // raises the long-run rate to about 10.9% without delaying early lucky hits.
+  return s.goldenMisses >= 15 || roll >= 0.92 ? "click" : roll < 0.45 ? "harvest" : "production";
+}
 function addGoldenBoost(boosts, kind, s, now) {
   // Refresh this effect only. A second effect can overlap; repeated identical
   // effects never multiply themselves or accumulate unbounded durations.
-  return { ...boosts, [kind]: now + GOLDEN_EFFECTS[kind].seconds * goldenSettings(s).duration * 1000 };
+  const next = { ...boosts, [kind]: now + goldenDuration(s, kind) * 1000 };
+  if (kind === "click") {
+    // Fix the burst's two components at activation: buying producers mid-burst
+    // must not recursively amplify the remaining 777x clicks. A production
+    // festival can still begin or end during the burst and affect its CPS share.
+    next.clickBase = clickPower({ ...s, owned: {} });
+    next.clickProduction = clickPower(s) - next.clickBase;
+  }
+  return next;
+}
+function activeClickPower(s, boosts, now) {
+  const festival = boostMultiplier(boosts, "production", now);
+  if (boosts.click > now) return (boosts.clickBase + boosts.clickProduction * festival) * GOLDEN_EFFECTS.click.multiplier;
+  return clickPower(s, festival);
 }
 // A small windfall rewards saving without letting one early lucky click buy
 // several tiers of facilities. Temporary multipliers never inflate this payout.
@@ -335,12 +357,13 @@ function advanceProduction(s, since, now, boosts = {}) {
 function normalizeSave(data) {
   if (!data || typeof data !== "object" || ![1, 2].includes(data.v)) throw Error("version");
   const s = newGame();
-  for (const key of ["rice", "totalRice", "clicks", "goldenClicks", "newsClicks", "savedAt", "crafted", "sold", "profit", "farmers"]) {
+  for (const key of ["rice", "totalRice", "clicks", "goldenClicks", "goldenMisses", "newsClicks", "savedAt", "crafted", "sold", "profit", "farmers"]) {
     if (data[key] === undefined) continue;
     if (typeof data[key] !== "number" || !Number.isFinite(data[key]) || Math.abs(data[key]) > 1e100 || (key !== "profit" && data[key] < 0)) throw Error(key);
-    if (["clicks", "goldenClicks", "newsClicks", "crafted", "sold", "farmers", "savedAt"].includes(key) && !Number.isSafeInteger(data[key])) throw Error(key);
+    if (["clicks", "goldenClicks", "goldenMisses", "newsClicks", "crafted", "sold", "farmers", "savedAt"].includes(key) && !Number.isSafeInteger(data[key])) throw Error(key);
     s[key] = data[key];
   }
+  if (s.goldenMisses > 15 || s.goldenMisses > s.goldenClicks) throw Error("goldenMisses");
   for (const [key, ids, counts] of [
     ["owned", BUILDINGS.map(b => b.id), true], ["upgrades", UPGRADES.map(u => u.id)],
     ["unlocked", ACHIEVEMENTS.map(a => a.id)], ["skinsOwned", SKINS.map(x => x.id)],
@@ -395,7 +418,7 @@ function offlineProgress(s, now) {
 }
 
 return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame,
-  production, clickPower, GOLDEN_EFFECTS, goldenSettings, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
+  production, clickPower, activeClickPower, GOLDEN_EFFECTS, goldenSettings, goldenDuration, goldenOutcome, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();
 if (typeof module !== "undefined") module.exports = Game;

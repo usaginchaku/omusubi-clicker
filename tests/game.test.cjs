@@ -173,8 +173,8 @@ test('rare 777x clicks stack with production-linked fingers, refresh independent
   const s={...G.newGame(),owned:{suihanki:1},upgrades:{shio:true,finger_0:true}};
   let boosts=G.addGoldenBoost({},'production',s,1000);
   boosts=G.addGoldenBoost(boosts,'click',s,26000);
-  const power=now=>G.clickPower(s,G.boostMultiplier(boosts,'production',now))*G.boostMultiplier(boosts,'click',now);
-  assert.equal(power(26000),(2+4*7*.02)*777);
+  const power=now=>G.activeClickPower(s,boosts,now);
+  assert.ok(Math.abs(power(26000)-(2+4*7*.02)*777)<1e-9);
   assert.equal(power(31000),(2+4*.02)*777, 'production expires while click frenzy remains');
   assert.equal(power(39000),2+4*.02, 'click effect ends at its boundary');
   boosts=G.addGoldenBoost(boosts,'click',s,30000);
@@ -190,12 +190,41 @@ test('golden upgrades unlock by catches, preserve save IDs and improve timing mu
   assert.deepEqual(G.goldenSettings(s),{wait:.8,lifetime:30,duration:1});
   s=G.buyUpgrade({...s,goldenClicks:27},'lucky_thermos');
   assert.equal(G.addGoldenBoost({},'click',s,1000).click,27000);
-  assert.equal(G.addGoldenBoost({},'production',s,1000).production,61000);
+  assert.equal(G.addGoldenBoost({},'production',s,1000).production,31000, 'thermos extends the click burst only');
   s=G.buyUpgrade({...s,goldenClicks:77},'lucky_schedule');
   const settings=G.goldenSettings({...s,activeSkin:'sekihan'});
   assert.ok(Math.abs(settings.wait-.48)<1e-12);
   assert.equal(settings.lifetime,60);
   assert.deepEqual(G.decodeSave(G.encodeSave(s)).state.upgrades,s.upgrades);
+});
+
+test('buying during a burst improves future clicks without recursively amplifying the current jackpot', () => {
+  const s={...G.newGame(),rice:1e12,clicks:2000,owned:{suihanki:1},upgrades:{shio:true,finger_0:true}};
+  let boosts=G.addGoldenBoost({},'click',s,1000);
+  let bought=G.buyBuilding(s,'moon');
+  bought=G.buyUpgrade(bought,'finger_1');
+  bought=G.buySkin(bought,'panda');
+  assert.ok(G.clickPower(bought)>G.clickPower(s)*1000);
+  assert.equal(G.activeClickPower(bought,boosts,1001),G.activeClickPower(s,boosts,1001));
+  boosts=G.addGoldenBoost(boosts,'production',bought,2000);
+  assert.ok(Math.abs(G.activeClickPower(bought,boosts,2000)-(2+4*.02*7)*777)<1e-9, 'a later festival still boosts the captured production share');
+  assert.equal(G.activeClickPower(bought,boosts,14000),G.clickPower(bought,7), 'new facilities and upgrades apply normally at the exact end');
+  boosts=G.addGoldenBoost(boosts,'click',bought,15000);
+  assert.ok(Math.abs(G.activeClickPower(bought,boosts,15000)/G.clickPower(bought,7)-777)<1e-9, 'the next burst uses the improved production');
+});
+
+test('golden dry spells are bounded and persist while older saves start with zero misses', () => {
+  const s={...G.newGame(),goldenClicks:15,goldenMisses:15};
+  assert.equal(G.goldenOutcome(s,0),'click');
+  assert.equal(G.goldenOutcome({...s,goldenMisses:14},.1),'harvest');
+  assert.equal(G.goldenOutcome({...s,goldenMisses:14},.919),'production');
+  assert.equal(G.goldenOutcome({...s,goldenMisses:0},.92),'click');
+  const restored=G.decodeSave(G.encodeSave(s)).state;
+  assert.equal(restored.goldenMisses,15);
+  assert.equal(G.goldenOutcome(restored,.5),'click');
+  assert.equal(G.normalizeSave({v:2,goldenClicks:99}).state.goldenMisses,0);
+  for (const goldenMisses of [-1,1.5,16,'15',Infinity]) assert.throws(()=>G.normalizeSave({...s,goldenMisses}));
+  assert.throws(()=>G.normalizeSave({...s,goldenClicks:1}));
 });
 
 test('new achievement collection contains no retired workshop objectives', () => {

@@ -291,6 +291,7 @@ function OnigiriClicker() {
   const [lastSaved, setLastSaved] = useState(0);
   const gameRef = useRef(game);
   const boostRef = useRef(boosts);
+  const frenzyRun = useRef(null);
   const saveCodeRef = useRef(null);
   const fileInputRef = useRef(null);
   const readingFileRef = useRef(false);
@@ -321,7 +322,7 @@ function OnigiriClicker() {
   const activeBoosts = Object.entries(Game.GOLDEN_EFFECTS).filter(([kind]) => boosts[kind] > clock);
   const productionBoost = Game.boostMultiplier(boosts, "production", clock);
   const cps = baseCps * productionBoost;
-  const clickPower = Game.clickPower(game, productionBoost) * Game.boostMultiplier(boosts, "click", clock);
+  const clickPower = Game.activeClickPower(game, boosts, clock);
   const chapter = Game.chapterFor(totalRice);
   const availableUpgrades = UPGRADES.filter(u => Game.upgradeAvailable(game, u)).sort((a, b) => a.cost - b.cost);
   const affordableUpgrades = availableUpgrades.filter(u => rice >= u.cost).length;
@@ -347,9 +348,14 @@ function OnigiriClicker() {
     const t = setInterval(() => {
       setGame(s => s);
       setClock(Date.now());
+      if (frenzyRun.current && Date.now() >= frenzyRun.current.until) {
+        const result = frenzyRun.current;
+        frenzyRun.current = null;
+        if (result.clicks) pushToast(`神の手で ${fmt(result.earned)} 粒！ ${result.clicks}回握った`);
+      }
     }, 100);
     return () => clearInterval(t);
-  }, [setGame]);
+  }, [setGame, pushToast]);
 
   useEffect(() => {
     const fresh = ACHIEVEMENTS.filter(a => unlocked[a.id] && !seenAchievements.current[a.id]);
@@ -417,9 +423,13 @@ function OnigiriClicker() {
     const now = Date.now();
     let gain;
     setGame(s => {
-      gain = Game.clickPower(s, Game.boostMultiplier(boostRef.current, "production", now)) * Game.boostMultiplier(boostRef.current, "click", now);
+      gain = Game.activeClickPower(s, boostRef.current, now);
       return { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, clicks: s.clicks + 1 };
     });
+    if (frenzyRun.current?.until > now) {
+      frenzyRun.current.earned += gain;
+      frenzyRun.current.clicks++;
+    }
     setSquish(true);
     clearTimeout(squishTimer.current);
     squishTimer.current = setTimeout(() => setSquish(false), 100);
@@ -435,22 +445,30 @@ function OnigiriClicker() {
     goldenAvailable.current = false;
     setGolden(null);
     clearTimeout(goldTimer.current);
-    const roll = Math.random();
-    if (roll < 0.45) {
+    // Settle before choosing the result; the dry-spell counter is saved with the
+    // catch so reloading cannot silently erase progress toward the guarantee.
+    let kind;
+    const snapshot = setGame(s => {
+      kind = Game.goldenOutcome(s, Math.random());
+      return { ...s, goldenClicks: s.goldenClicks + 1, goldenMisses: kind === "click" ? 0 : s.goldenMisses + 1 };
+    });
+    if (kind === "harvest") {
       let bonus;
       setGame(s => {
         bonus = Game.goldenHarvest(s);
-        return { ...s, goldenClicks: s.goldenClicks + 1, rice: s.rice + bonus, totalRice: s.totalRice + bonus };
+        return { ...s, rice: s.rice + bonus, totalRice: s.totalRice + bonus };
       });
       pushToast(`豊作！ ${fmt(bonus)} 粒、どこからともなく届いた。`);
     } else {
-      const snapshot = setGame(s => ({ ...s, goldenClicks: s.goldenClicks + 1 }));
-      const kind = roll < 0.92 ? "production" : "click";
       const now = Date.now();
       boostRef.current = Game.addGoldenBoost(boostRef.current, kind, snapshot, now);
+      if (kind === "click") {
+        const previous = frenzyRun.current?.until > now ? frenzyRun.current : { earned: 0, clicks: 0 };
+        frenzyRun.current = { ...previous, until: boostRef.current.click };
+      }
       setBoosts(boostRef.current);
       setClock(now);
-      const seconds = Game.GOLDEN_EFFECTS[kind].seconds * Game.goldenSettings(snapshot).duration;
+      const seconds = Game.goldenDuration(snapshot, kind);
       pushToast(kind === "production" ? `炊飯祭り！ ${seconds}秒間、生産が7倍！` : `神の手！ ${seconds}秒間、クリックが777倍！`);
     }
     scheduleGolden.current?.();
@@ -529,6 +547,7 @@ function OnigiriClicker() {
       lastTick.current = Date.now();
       seenAchievements.current = { ...loaded.state.unlocked };
       boostRef.current = {};
+      frenzyRun.current = null;
       goldenAvailable.current = false;
       setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
       scheduleGolden.current?.();
@@ -663,7 +682,7 @@ function OnigiriClicker() {
               <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
               {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
             </details>
-            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>生産7倍とクリック777倍は同時に発動します。「指」の強化があると、生産7倍がクリックにも乗ります。同じ効果を取ると残り時間が更新されます。金のおむすびを7・27・77回つかまえると、金専用の強化がショップに解放されます。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>
         </section>

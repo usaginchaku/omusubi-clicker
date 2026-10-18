@@ -166,6 +166,7 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
     saveMessage: () => text(find(tree,node=>node.props.className==='save-message')),
     saveCode: () => find(tree,node=>node.props.id==='save-code')?.props.value,
     manualCodeOpen: () => find(tree,node=>node.type==='details' && text(node).includes('コードで読み込む'))?.props.open,
+    toasts: () => text(find(tree,node=>node.props.className==='toast-area')),
     chooseQuantity(quantity) {
       const button = find(tree, node => node.type === 'button' && node.props['aria-label'] === `${quantity}個ずつ購入`);
       assert.ok(button);
@@ -216,6 +217,26 @@ test('golden effects coexist, a fast double tap claims once, and pagehide saves 
   assert.equal(runtime.saved().rice,100 + .5*(30*7+56) + 1.07*777);
   runtime.tick();
   assert.doesNotMatch(runtime.caption(),/×777/);
+});
+
+test('fifteen non-frenzy catches survive a reload, the next catch guarantees 777x and the burst reports its earnings once', async () => {
+  const code=await loadCompiledApp();
+  const runtime=createRuntime(code,startingGame(),()=>.1);
+  for(let i=0;i<15;i++) { runtime.spawnGolden(); runtime.claimGolden(); runtime.flush(); }
+  runtime.pagehide();
+  assert.equal(runtime.saved().goldenMisses,15);
+  assert.equal(runtime.saved().goldenClicks,15);
+  const resumed=createRuntime(code,runtime.saved(),()=>.1);
+  resumed.spawnGolden(); resumed.claimGolden(); resumed.claimGolden();
+  resumed.clickOnigiri(); resumed.clickOnigiri(); resumed.pagehide(); resumed.flush();
+  assert.equal(resumed.saved().goldenMisses,0);
+  assert.equal(resumed.saved().goldenClicks,16, 'double tap does not count twice');
+  assert.equal(resumed.saved().rice-runtime.saved().rice,1554);
+  assert.match(resumed.caption(),/クリック ×777/);
+  resumed.advance(13000); resumed.tick();
+  assert.match(resumed.toasts(),/神の手で 1,554 粒！ 2回握った/);
+  resumed.tick();
+  assert.equal((resumed.toasts().match(/2回握った/g)||[]).length,1);
 });
 
 test('copy exports current progress including unrendered clicks; failure reveals manual copying', async () => {
