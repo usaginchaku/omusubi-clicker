@@ -128,7 +128,8 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
     if (Array.isArray(node)) return node.map(child => find(child, predicate)).find(Boolean);
     return predicate(node) ? node : find(node.children, predicate);
   }
-  const text = node => node == null ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
+  // React does not render booleans produced by conditional children.
+  const text = node => node == null || typeof node === 'boolean' ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
   vm.runInContext(fs.readFileSync(path.join(root, 'game.js'), 'utf8'), context);
   vm.runInContext(code, context);
   flush();
@@ -167,6 +168,7 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
     saveCode: () => find(tree,node=>node.props.id==='save-code')?.props.value,
     manualCodeOpen: () => find(tree,node=>node.type==='details' && text(node).includes('コードで読み込む'))?.props.open,
     toasts: () => text(find(tree,node=>node.props.className==='toast-area')),
+    screenText: () => text(tree),
     chooseQuantity(quantity) {
       const button = find(tree, node => node.type === 'button' && node.props['aria-label'] === `${quantity}個ずつ購入`);
       assert.ok(button);
@@ -372,4 +374,30 @@ test('a click immediately before pagehide survives even before React renders aga
   assert.equal(runtime.saved().clicks, 1);
   assert.equal(runtime.resumed().rice, 101);
   assert.equal(runtime.resumed().clicks, 1);
+});
+
+test('welcoming a regular saves once, grows production and shows the same rates in the collection', async () => {
+  const state=Game.awardAchievements({...startingGame(),rice:10000,totalRice:10000,clicks:250,owned:{obaachan:10,suihanki:10},upgrades:{shio:true}});
+  const runtime=createRuntime(await loadCompiledApp(),state);
+  await runtime.press('図鑑');
+  await runtime.press('常連 0/4');
+  assert.match(runtime.screenText(),/しゃもじを持った猫/);
+  await runtime.press('しゃもじを持った猫を迎える · 1,000 粒');
+  runtime.pagehide();
+  const bought=runtime.saved();
+  assert.equal(bought.rice,9000);
+  assert.equal(bought.upgrades.regular_cat,true);
+  assert.ok(Game.production(bought)>Game.production(state));
+  assert.match(runtime.screenText(),/手は貸す。肉球は貸さない。/);
+  await runtime.press('話す');
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,9000, 'conversation is free and grants no farmable reward');
+  assert.match(runtime.screenText(),/まかないの鮭だけ/);
+  runtime.advance(1000); runtime.tick(); runtime.pagehide();
+  assert.equal(runtime.saved().rice,9000+Game.production(bought));
+  await runtime.press('施設のようす');
+  assert.match(runtime.screenText(),/合計 毎秒/);
+  await runtime.press('セーブ');
+  await runtime.press('最新コードをコピー');
+  assert.equal(Game.decodeSave(runtime.clipboard[0]).state.upgrades.regular_cat,true);
 });

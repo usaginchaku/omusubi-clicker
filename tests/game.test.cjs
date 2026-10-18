@@ -237,3 +237,78 @@ test('new achievement collection contains no retired workshop objectives', () =>
   assert.equal(awarded.unlocked.obaachan_ach0,true);
   assert.equal(G.awardAchievements(awarded),awarded);
 });
+
+test('later ingredients add useful production-linked clicks without multiplying the whole click amount', () => {
+  const s={...G.newGame(),rice:1e8,totalRice:1e8,owned:{moon:10},upgrades:{shio:true,finger_0:true}};
+  const bought=G.buyUpgrade(s,'sake');
+  assert.equal(G.clickPower(bought)-G.clickPower(s),2+G.production(s)*.005);
+  assert.equal(G.clickPower(bought,7),4+G.production(s)*7*.025);
+  assert.equal(G.production(bought),G.production(s), 'ingredients affect clicking, not idle production');
+  assert.equal(G.UPGRADES.filter(u=>u.kind==='click').reduce((n,u)=>n+u.share,0),.1);
+  const boosts=G.addGoldenBoost({},'click',s,1000);
+  assert.equal(G.activeClickPower(bought,boosts,1001),G.activeClickPower(s,boosts,1001));
+  assert.equal(G.activeClickPower(bought,boosts,14000),G.clickPower(bought));
+});
+
+test('pair recipes require both facilities and improve only that pair once', () => {
+  const s={...G.newGame(),rice:5000,owned:{obaachan:10,suihanki:9,tanbo:1},upgrades:{obaachan_tier0:true}};
+  assert.equal(G.upgradeAvailable({...s,totalRice:1e9},G.PAIR_UPGRADES[0]),false, 'the displayed next recipe uses ownership, not lifetime income');
+  assert.equal(G.buyUpgrade(s,'pair_kitchen'),s);
+  const ready={...s,owned:{...s.owned,suihanki:10}};
+  const bought=G.buyUpgrade(ready,'pair_kitchen');
+  assert.equal(bought.rice,2500);
+  assert.equal(G.buildingMultiplier(bought,'obaachan'),2.5);
+  assert.equal(G.buildingMultiplier(bought,'suihanki'),1.25);
+  assert.equal(G.buildingMultiplier(bought,'tanbo'),1);
+  assert.equal(G.production(bought),(10+40)*1.25+30);
+  assert.equal(G.buyUpgrade(bought,'pair_kitchen'),bought);
+  assert.equal(G.decodeSave(G.encodeSave(bought)).state.upgrades.pair_kitchen,true);
+});
+
+test('regulars count only earned active achievements and their support adds instead of compounding', () => {
+  const earned=Object.fromEntries(G.ACHIEVEMENTS.filter(a=>!a.legacy).slice(0,8).map(a=>[a.id,true]));
+  const s={...G.newGame(),rice:5000,owned:{suihanki:10},unlocked:{...earned,craft1:true,up50:false,unknown:true}};
+  assert.equal(G.achievementCount(s),8);
+  assert.equal(G.regularMultiplier(s),1, 'meeting the milestone is not a free purchase');
+  assert.equal(G.buyUpgrade({...s,unlocked:{}},'regular_cat').upgrades.regular_cat,undefined);
+  assert.equal(G.buyUpgrade({...s,rice:999},'regular_cat').upgrades.regular_cat,undefined);
+  const bought=G.buyUpgrade(s,'regular_cat');
+  assert.equal(bought.rice,4000);
+  assert.equal(G.production(bought),40*1.02);
+  assert.equal(G.buyUpgrade(bought,'regular_cat'),bought);
+  const more={...bought,upgrades:{...bought.upgrades,regular_cooker:true}};
+  assert.equal(G.regularMultiplier(more),1.04);
+  assert.equal(G.offlineProgress({...more,savedAt:1000},11000).gain,40*1.04*10);
+});
+
+test('regular and pair purchases survive saves, old saves need no migration and newly earned achievements strengthen support', () => {
+  const old=G.normalizeSave({v:2,rice:1e9,totalRice:1e9,clicks:1600,owned:{obaachan:50,suihanki:50,tanbo:10},upgrades:{shio:true}}).state;
+  assert.equal(G.regularMultiplier(old),1);
+  const bought=G.awardAchievements(G.buyUpgrade(G.buyUpgrade(old,'pair_kitchen'),'regular_cat'));
+  assert.ok(bought.upgrades.regular_cat && bought.unlocked.regular1 && bought.unlocked.pair1);
+  assert.ok(G.regularMultiplier(bought)>1+G.achievementCount(old)*.0025);
+  const restored=G.decodeSave(G.encodeSave(bought)).state;
+  assert.equal(G.production(restored),G.production(bought));
+  assert.equal(G.clickPower(restored),G.clickPower(bought));
+  assert.throws(()=>G.normalizeSave({...bought,upgrades:{regular_cat:1}}));
+});
+
+test('new 25-facility medals preserve the existing 1 and 50 milestone IDs', () => {
+  for(const count of [24,25,49,50]) {
+    const s=G.awardAchievements({...G.newGame(),owned:{suihanki:count}});
+    assert.equal(s.unlocked.suihanki_ach0,true);
+    assert.equal(!!s.unlocked.suihanki_ach2,count>=25);
+    assert.equal(!!s.unlocked.suihanki_ach1,count>=50);
+    const restored=G.decodeSave(G.encodeSave(s)).state;
+    assert.equal(!!restored.unlocked.suihanki_ach2,count>=25);
+  }
+});
+
+test('regular support earned mid-frenzy strengthens normal play but cannot amplify that frenzy snapshot', () => {
+  const s=G.awardAchievements({...G.newGame(),rice:1e6,totalRice:1e6,clicks:500,owned:{obaachan:10,suihanki:10},upgrades:{finger_0:true}});
+  const boosts=G.addGoldenBoost({},'click',s,1000);
+  const bought=G.awardAchievements(G.buyUpgrade(s,'regular_cat'));
+  assert.ok(G.production(bought)>G.production(s));
+  assert.equal(G.activeClickPower(bought,boosts,1001),G.activeClickPower(s,boosts,1001));
+  assert.equal(G.activeClickPower(bought,boosts,14000),G.clickPower(bought));
+});

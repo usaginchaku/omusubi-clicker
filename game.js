@@ -148,6 +148,32 @@ for (const [i, clicks, cost, percent, name, flavor] of [
 // Ingredient multipliers affect the base amount; production-linked fingers are
 // added afterwards. Describe that distinction instead of promising twice the total.
 UPGRADES.filter(u => u.kind === "click").forEach(u => { u.desc = u.desc.replace("クリック力", "基本のクリック力"); });
+// Later ingredients must still matter when fingers dwarf the base click amount.
+// Add a modest CPS share instead of multiplying the whole 777x economy again.
+UPGRADES.filter(u => u.kind === "click").forEach((u, i) => {
+  u.share = [0, 0, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1.5, 1.5, 2][i] / 100;
+  if (u.share) u.desc += `・1クリックに毎秒生産の${u.share * 100}%を追加`;
+});
+
+const REGULARS = [
+  { id: "regular_cat", name: "しゃもじを持った猫", need: 8, cost: 1000, support: 0.0025, portrait: "cat", flavor: "招き猫を頼んだら、現場に入ってきた。", lines: ["手は貸す。肉球は貸さない。", "まかないの鮭だけ、別皿にできますか。", "猫の手です。即戦力です。"] },
+  { id: "regular_cooker", name: "炊飯器の中の小さいおじさん", need: 20, cost: 1e6, support: 0.0025, portrait: "cooker", flavor: "保温ランプは、彼の部屋の明かりだった。", lines: ["蒸らしてる間は休憩時間です。", "炊き込みごはんの日、家具を避難させます。", "ピーピーピーは私が言っています。"] },
+  { id: "regular_rabbit", name: "月から通ううさぎ", need: 35, cost: 1e9, support: 0.0025, portrait: "rabbit", flavor: "交通費の申請が天文学的。", lines: ["終電は満月です。", "餅つきは副業になりました。", "月の裏側、全部お弁当置き場です。"] },
+  { id: "regular_future", name: "未来の自分（昼休み）", need: 50, cost: 1e12, support: 0.0025, portrait: "future", flavor: "未来を変えるより、昼ごはんを確保したかった。", lines: ["ネタバレになるので、具は言えません。", "明日の弁当、昨日ここに忘れました。", "安心して。未来でもお腹はすきます。"] },
+];
+UPGRADES.push(...REGULARS.map(r => ({ ...r, kind: "regular", icon: "🍵", desc: `実績1個につき全生産 +${r.support * 100}%` })));
+
+const PAIR_UPGRADES = [
+  { id: "pair_kitchen", name: "阿吽の炊飯", requires: { obaachan: 10, suihanki: 10 }, cost: 2500, flavor: "『あれ炊いといて』で品種まで通じる。" },
+  { id: "pair_drive", name: "田んぼ直結レジ", requires: { tanbo: 10, conbini: 10 }, cost: 250000, flavor: "産地直送にもほどがある。店内が田んぼ。" },
+  { id: "pair_robot", name: "俵ごと自動改札", requires: { tonya: 10, robo: 10 }, cost: 2.5e7, flavor: "ピッ。残高は玄米で表示されます。" },
+  { id: "pair_moon", name: "月と神様の出前回線", requires: { jinja: 10, moon: 10 }, cost: 2.5e9, flavor: "お供え、月の裏までお願いします。" },
+  { id: "pair_paper", name: "卒論の追い炊き", requires: { university: 10, collider: 10 }, cost: 2.5e11, flavor: "査読者2、もう一膳を要求。" },
+  { id: "pair_yesterday", name: "昨日からの仕送り", requires: { time: 10, parallel: 1 }, cost: 5e14, flavor: "食べる前から、お礼の電話が来た。" },
+  { id: "pair_home", name: "結局、いつもの味", requires: { home: 1, obaachan: 100 }, cost: 5e20, flavor: "宇宙の外でも、塩はひとつまみ。" },
+].map(u => ({ ...u, kind: "pair", icon: "🍱", mult: 1.25,
+  desc: Object.keys(u.requires).map(id => BUILDINGS.find(b => b.id === id).name).join("と") + "の生産 +25%" }));
+UPGRADES.push(...PAIR_UPGRADES);
 
 UPGRADES.push(
   { id: "lucky_cat", kind: "golden", name: "招きむすび", cost: 7777, goldenNeed: 7, wait: 0.8, lifetime: 2, icon: "🍙", desc: "金の待ち時間 −20%・出現時間 ×2", flavor: "右手は米を、左手も米を招く。" },
@@ -209,13 +235,26 @@ const ACHIEVEMENT_TITLES = [
   ["空腹には実体があった", "もはや米という思想"], ["作者の都合で豊作", "この文も米になった"],
   ["創世の炊飯ボタン", "宇宙を50個炊きました"], ["ただいま", "どこまで行っても、いただきます"],
 ];
+const MID_ACHIEVEMENT_TITLES = [
+  "おかわり包囲網", "コンセント争奪戦", "見渡すかぎり昼ごはん", "徒歩五分に二十五軒",
+  "倉庫が米を吐く", "田植えは多数決", "神様も相席", "月面、緑化しました",
+  "お米だけで総合大学", "しゃもじ渋滞", "炊き上がりは先週", "太陽系定食",
+  "底がないのが二十五個", "親戚の範囲が宇宙", "思想がもちもち", "語り手が二十五人",
+  "宇宙を炊き置き", "帰省先が多すぎる",
+];
 BUILDINGS.forEach((b, i) => {
-  [1, 50].forEach((count, tier) => ACHIEVEMENTS.push({
-    id: `${b.id}_ach${tier}`, name: ACHIEVEMENT_TITLES[i][tier],
+  // Keep the original 1/50 achievement IDs stable for existing saves.
+  [[1, 0, ACHIEVEMENT_TITLES[i][0]], [25, 2, MID_ACHIEVEMENT_TITLES[i]], [50, 1, ACHIEVEMENT_TITLES[i][1]]].forEach(([count, tier, name]) => ACHIEVEMENTS.push({
+    id: `${b.id}_ach${tier}`, name, building: b.id, need: count,
     desc: `${b.name}を${count}${b.unit}迎える`, cond: s => (s.owned[b.id] || 0) >= count,
   }));
 });
 ACHIEVEMENTS.push(
+  { id: "pair1", name: "お米の連携プレー", desc: "連携の強化を1つ購入", cond: s => PAIR_UPGRADES.some(u => s.upgrades[u.id]) },
+  { id: "pair4", name: "主食の物流革命", desc: "連携の強化を4つ購入", cond: s => PAIR_UPGRADES.filter(u => s.upgrades[u.id]).length >= 4 },
+  { id: "regular1", name: "いつもの、ください", desc: "常連を1人迎える", cond: s => REGULARS.some(r => s.upgrades[r.id]) },
+  { id: "regular4", name: "満席（時空を含む）", desc: "常連を全員迎える", cond: s => REGULARS.every(r => s.upgrades[r.id]) },
+  ...[100, 500, 1000].map((count, i) => ({ id: `facility_total_${count}`, name: ["炊飯体制、整いました", "人手という概念", "一粒のための大組織"][i], desc: `施設を合計${count.toLocaleString("ja-JP")}個所有`, cond: s => Object.values(s.owned).reduce((sum, n) => sum + n, 0) >= count })),
   { id: "c25", name: "もう一個だけ", desc: "25回握る", cond: s => s.clicks >= 25 },
   { id: "c250", name: "手が勝手に", desc: "250回握る", cond: s => s.clicks >= 250 },
   { id: "c5000", name: "指紋がお米", desc: "5,000回握る", cond: s => s.clicks >= 5000 },
@@ -251,15 +290,20 @@ function newGame() {
 }
 const skinCps = id => ({ genmai: 1.1, gold: 1.15, cosmos: 1.25 }[id] || 1);
 const skinClick = id => ({ yukari: 1.15, gold: 1.15, panda: 1.1, neko: 1.2 }[id] || 1);
+const achievementCount = s => ACHIEVEMENTS.filter(a => !a.legacy && s.unlocked[a.id]).length;
+function regularMultiplier(s) {
+  const support = REGULARS.reduce((sum, r) => sum + (s.upgrades[r.id] ? r.support : 0), 0);
+  return 1 + achievementCount(s) * support;
+}
 function buildingMultiplier(s, id) {
-  return UPGRADES.filter(u => u.building === id && s.upgrades[u.id]).reduce((m, u) => m * u.mult, 1);
+  return UPGRADES.filter(u => (u.building === id || (u.kind === "pair" && id in u.requires)) && s.upgrades[u.id]).reduce((m, u) => m * u.mult, 1);
 }
 function production(s) {
-  return BUILDINGS.reduce((sum, b) => sum + b.cps * (s.owned[b.id] || 0) * buildingMultiplier(s, b.id), 0) * skinCps(s.activeSkin);
+  return BUILDINGS.reduce((sum, b) => sum + b.cps * (s.owned[b.id] || 0) * buildingMultiplier(s, b.id), 0) * skinCps(s.activeSkin) * regularMultiplier(s);
 }
 function clickPower(s, productionBoost = 1) {
   const multiplier = UPGRADES.filter(u => u.kind === "click" && s.upgrades[u.id]).reduce((p, u) => p * u.mult, 1);
-  const share = UPGRADES.filter(u => u.kind === "finger" && s.upgrades[u.id]).reduce((p, u) => p + u.share, 0);
+  const share = UPGRADES.filter(u => s.upgrades[u.id]).reduce((p, u) => p + (u.share || 0), 0);
   return (multiplier + production(s) * productionBoost * share) * skinClick(s.activeSkin);
 }
 const GOLDEN_EFFECTS = {
@@ -314,6 +358,8 @@ function upgradeAvailable(s, u) {
   if (u.kind === "building") return (s.owned[u.building] || 0) >= u.need;
   if (u.kind === "finger") return s.clicks >= u.clickNeed;
   if (u.kind === "golden") return s.goldenClicks >= u.goldenNeed;
+  if (u.kind === "regular") return achievementCount(s) >= u.need;
+  if (u.kind === "pair") return Object.entries(u.requires).every(([id, count]) => (s.owned[id] || 0) >= count);
   return s.totalRice >= u.cost * 0.4;
 }
 const PURCHASE_QUANTITIES = [1, 10, 100, 1000];
@@ -417,7 +463,7 @@ function offlineProgress(s, now) {
   return { state: { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, savedAt: now }, gain };
 }
 
-return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame,
+return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
   production, clickPower, activeClickPower, GOLDEN_EFFECTS, goldenSettings, goldenDuration, goldenOutcome, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();

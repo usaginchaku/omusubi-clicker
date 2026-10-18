@@ -1,6 +1,35 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS } = Game;
+const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES } = Game;
+
+function RegularPortrait({ kind, known }) {
+  return <svg viewBox="0 0 100 100" aria-hidden="true" className={`regular-portrait ${known ? "" : "unknown"}`}>
+    <circle cx="50" cy="50" r="46" fill="#273f4b" stroke="#779993" strokeWidth="2" />
+    {kind === "cat" && <g fill="#f5dfaa" stroke="#805b3d" strokeWidth="2.5" strokeLinejoin="round">
+      <path d="M27 42 24 19 43 31 M58 31 77 19 75 44" /><ellipse cx="50" cy="48" rx="27" ry="23" />
+      <path d="M34 69 Q50 60 66 69 L70 85 H30Z" fill="#83b8a2" /><path d="M39 47h2m18 0h2M47 55q3 4 6 0" fill="none" strokeLinecap="round" />
+      <path d="m72 80 7-28" stroke="#e7bd78" strokeWidth="5" /><ellipse cx="80" cy="42" rx="8" ry="13" fill="#f9eed8" />
+    </g>}
+    {kind === "cooker" && <g stroke="#355669" strokeWidth="2.5" strokeLinejoin="round">
+      <rect x="18" y="44" width="64" height="38" rx="13" fill="#c8e5e7" /><ellipse cx="50" cy="44" rx="32" ry="9" fill="#6c8a9b" />
+      <path d="M31 39Q33 22 50 22T69 39" fill="#fff7de" /><circle cx="50" cy="38" r="14" fill="#f3ca99" />
+      <path d="M43 37h1m12 0h1m-10 6q4 3 8 0" strokeLinecap="round" /><path d="M37 25q13-12 26 0" fill="#fff9ef" />
+      <rect x="40" y="61" width="20" height="10" rx="3" fill="#2c4554" /><circle cx="68" cy="65" r="3" fill="#ffda78" stroke="none" />
+    </g>}
+    {kind === "rabbit" && <g stroke="#71929f" strokeWidth="2.5">
+      <path d="M35 36Q17 3 31 10Q43 16 44 36M56 36Q60 6 71 9Q81 15 65 39" fill="#f9f4e7" />
+      <ellipse cx="50" cy="58" rx="31" ry="29" fill="#93bfd0" /><ellipse cx="50" cy="52" rx="24" ry="22" fill="#fff8e7" />
+      <path d="M41 49v2m18-2v2m-13 8q4 4 8 0" stroke="#364c61" strokeLinecap="round" /><path d="M35 76h30" stroke="#ead49a" strokeWidth="7" />
+      <circle cx="51" cy="79" r="3" fill="#2c4554" />
+    </g>}
+    {kind === "future" && <g stroke="#8cb9c8" strokeWidth="2.5" strokeLinejoin="round">
+      <path d="M50 22Q55 20 60 30L79 66Q85 81 69 83H31Q15 81 22 66L41 30Q46 22 50 22Z" fill="#e6f0df" />
+      <rect x="38" y="61" width="25" height="23" rx="3" fill="#2b594c" stroke="none" /><path d="M35 49h3m24 0h3m-20 7q5 5 10 0" stroke="#3a5167" strokeLinecap="round" />
+      <path d="m46 63 4 5 4-5-4 17Z" fill="#e69a85" stroke="none" /><ellipse cx="50" cy="18" rx="29" ry="6" fill="none" strokeDasharray="4 4" />
+    </g>}
+    {!known && <text x="50" y="62" textAnchor="middle" fill="#d8e7e5" fontSize="32" fontWeight="bold">?</text>}
+  </svg>;
+}
 
 // ---------- 実績メダルSVG ----------
 function AchIcon({ id, done }) {
@@ -270,6 +299,7 @@ function OnigiriClicker() {
   const [tab, setTab] = useState("shop");
   const [shopTab, setShopTab] = useState("buildings");
   const [collectionTab, setCollectionTab] = useState("achievements");
+  const [regularLines, setRegularLines] = useState({});
   const [achFilter, setAchFilter] = useState("all");
   const [quantity, setQuantity] = useState(1);
   const [particles, setParticles] = useState([]);
@@ -324,7 +354,7 @@ function OnigiriClicker() {
   const cps = baseCps * productionBoost;
   const clickPower = Game.activeClickPower(game, boosts, clock);
   const chapter = Game.chapterFor(totalRice);
-  const availableUpgrades = UPGRADES.filter(u => Game.upgradeAvailable(game, u)).sort((a, b) => a.cost - b.cost);
+  const availableUpgrades = UPGRADES.filter(u => u.kind !== "regular" && Game.upgradeAvailable(game, u)).sort((a, b) => a.cost - b.cost);
   const affordableUpgrades = availableUpgrades.filter(u => rice >= u.cost).length;
   const collectedUpgrades = UPGRADES.filter(u => upgrades[u.id]);
   const achievements = ACHIEVEMENTS.filter(a => !a.legacy || unlocked[a.id]);
@@ -337,6 +367,12 @@ function OnigiriClicker() {
   const featuredUpgrade = availableUpgrades[0];
   const nextFinger = UPGRADES.find(u => u.kind === "finger" && clicks < u.clickNeed && !upgrades[u.id]);
   const nextGoldenUpgrade = UPGRADES.find(u => u.kind === "golden" && game.goldenClicks < u.goldenNeed && !upgrades[u.id]);
+  const activeAchievements = Game.achievementCount(game);
+  const regularBonus = (Game.regularMultiplier(game) - 1) * 100;
+  const regularCount = REGULARS.filter(r => upgrades[r.id]).length;
+  const waitingRegulars = REGULARS.filter(r => activeAchievements >= r.need && !upgrades[r.id]);
+  const nextRegular = REGULARS.find(r => activeAchievements < r.need);
+  const nextPair = PAIR_UPGRADES.find(u => !upgrades[u.id] && !Game.upgradeAvailable(game, u) && Object.keys(u.requires).some(id => owned[id]));
 
   const pushToast = useCallback(msg => {
     const id = pid.current++;
@@ -613,7 +649,7 @@ function OnigiriClicker() {
         <section className="right" aria-label="おむすび帝国">
           <nav className="tabbar" aria-label="ゲームメニュー">
             {[['shop','ショップ'],['collection','図鑑'],['skin','きせかえ'],['save','セーブ']].map(([id,label]) =>
-              <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>{label}</button>)}
+              <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>{label}{id === "collection" && waitingRegulars.length > 0 && <span className="new-dot" aria-label="新しい常連が来ています" />}</button>)}
           </nav>
           <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}`}>
           {tab === "shop" && <>
@@ -628,7 +664,7 @@ function OnigiriClicker() {
               </button>}
               {visibleBuildings.map(b => {
                 const n = owned[b.id] || 0, cost = Game.buildingPrice(game, b, quantity);
-                const rate = b.cps * Game.buildingMultiplier(game, b.id) * Game.skinCps(activeSkin);
+                const rate = b.cps * Game.buildingMultiplier(game, b.id) * Game.skinCps(activeSkin) * Game.regularMultiplier(game);
                 const milestone = Game.nextBuildingUpgrade(game, b.id);
                 return <button key={b.id} className={`shop-item building-item ${rice >= cost ? "affordable" : ""}`} disabled={rice < cost} onClick={() => buy(b)}>
                   <span className="shop-icon" aria-hidden="true">{b.icon}</span>
@@ -639,9 +675,9 @@ function OnigiriClicker() {
               })}
               {nextBuilding && <div className="next-building"><span>？ 次の施設</span><span>累計 {fmt(nextBuilding.baseCost * 0.25)} 粒で発見</span></div>}
             </> : <>
-              <p className="panel-help">具材でクリック強化。施設を増やすと、その施設の強化も解放。</p>
               {nextFinger && <p className="finger-goal">あと{fmt(nextFinger.clickNeed - clicks)}回握ると「{nextFinger.name}」が解放</p>}
               {nextGoldenUpgrade && <p className="finger-goal">金のおむすび あと{nextGoldenUpgrade.goldenNeed - game.goldenClicks}回で「{nextGoldenUpgrade.name}」が解放</p>}
+              {nextPair && <details className="pair-goal"><summary>次の連携：{nextPair.name}</summary><p className="production">{nextPair.desc}</p><div className="pair-requirements">{Object.entries(nextPair.requires).map(([id, need]) => <span key={id}>{BUILDINGS.find(b => b.id === id).name} {Math.min(owned[id] || 0, need)}/{need}</span>)}</div></details>}
               {availableUpgrades.length === 0 && <div className="empty-state">まずは米粒を集めよう。累計20粒で最初の強化が見つかるよ。</div>}
               {availableUpgrades.map(u => <button key={u.id} className={`shop-item upgrade-item ${rice >= u.cost ? "affordable" : ""}`} disabled={rice < u.cost} onClick={() => buyUpgrade(u)}>
                 <span className="shop-icon" aria-hidden="true">{u.icon}</span><span className="shop-body"><span className="shop-name">{u.name}</span><span className="production">{u.desc}</span><span className="shop-desc">{u.flavor}</span></span><span className="shop-cost">{fmt(u.cost)} 粒</span>
@@ -650,15 +686,28 @@ function OnigiriClicker() {
             </>}
           </>}
           {tab === "collection" && <>
-            <div className="subnav" aria-label="図鑑の種類"><button aria-pressed={collectionTab === "achievements"} className={collectionTab === "achievements" ? "selected" : ""} onClick={() => setCollectionTab("achievements")}>実績 {achCount}/{achievements.length}</button><button aria-pressed={collectionTab === "buildings"} className={collectionTab === "buildings" ? "selected" : ""} onClick={() => setCollectionTab("buildings")}>施設のようす</button></div>
+            <div className="subnav" aria-label="図鑑の種類"><button aria-pressed={collectionTab === "achievements"} className={collectionTab === "achievements" ? "selected" : ""} onClick={() => setCollectionTab("achievements")}>実績 {achCount}/{achievements.length}</button><button aria-pressed={collectionTab === "buildings"} className={collectionTab === "buildings" ? "selected" : ""} onClick={() => setCollectionTab("buildings")}>施設のようす</button><button aria-pressed={collectionTab === "regulars"} className={collectionTab === "regulars" ? "selected" : ""} onClick={() => setCollectionTab("regulars")}>常連 {regularCount}/{REGULARS.length}</button></div>
             {collectionTab === "achievements" ? <>
+              <button className="regular-summary" onClick={() => setCollectionTab("regulars")}><span>常連の応援 <b>全生産 +{Number(regularBonus.toFixed(2))}%</b></span><span>{waitingRegulars.length ? `${waitingRegulars.length}人が来ています ›` : nextRegular ? `実績あと${nextRegular.need - activeAchievements}個で次の常連 ›` : "常連を見る ›"}</span></button>
               <div className="ach-progress"><span style={{width:`${achCount / achievements.length * 100}%`}} /></div>
               <div className="filters" aria-label="実績の絞り込み">{[['all','すべて'],['todo','未達成'],['done','達成済み']].map(([id,label]) => <button key={id} aria-pressed={achFilter === id} onClick={() => setAchFilter(id)}>{label}</button>)}</div>
               {shownAchievements.length === 0 && <p className="empty-state">これから最初のひとつを。</p>}
-              {shownAchievements.map(a => <div key={a.id} className={`ach-item ${unlocked[a.id] ? "done" : "locked"}`}><AchIcon id={a.id} done={!!unlocked[a.id]} /><div><div className="ach-name">{a.secret && !unlocked[a.id] ? "ひみつの実績" : a.name}</div><div className="ach-desc">{a.secret && !unlocked[a.id] ? "いつもと違うところに、何かある。" : a.desc}{a.legacy ? " · 旧工房の記念" : ""}</div></div>{unlocked[a.id] && <span className="ach-check" aria-label="達成">✓</span>}</div>)}
+              {shownAchievements.map(a => <div key={a.id} className={`ach-item ${unlocked[a.id] ? "done" : "locked"}`}><AchIcon id={a.id} done={!!unlocked[a.id]} /><div><div className="ach-name">{a.secret && !unlocked[a.id] ? "ひみつの実績" : a.name}</div><div className="ach-desc">{a.secret && !unlocked[a.id] ? "いつもと違うところに、何かある。" : a.desc}{a.legacy ? " · 旧工房の記念" : ""}{a.building && !unlocked[a.id] && ` · 所持 ${owned[a.building] || 0}/${a.need}`}</div></div>{unlocked[a.id] && <span className="ach-check" aria-label="達成">✓</span>}</div>)}
+            </> : collectionTab === "regulars" ? <>
+              <div className="regular-total"><span>実績 {activeAchievements}個</span><b>全生産 +{Number(regularBonus.toFixed(2))}%</b></div>
+              {REGULARS.map(r => {
+                const welcomed = !!upgrades[r.id], known = welcomed || activeAchievements >= r.need;
+                return <div key={r.id} className={`regular-card ${welcomed ? "welcomed" : ""}`}>
+                  <RegularPortrait kind={r.portrait} known={known} />
+                  <div className="regular-body"><h2>{known ? r.name : "まだ見ぬ常連"}</h2>
+                    {known ? <><p className="shop-desc">{r.flavor}</p><p className="production">実績1個につき全生産 +{r.support * 100}%{welcomed && `（今は +${Number((activeAchievements * r.support * 100).toFixed(2))}%）`}</p></> : <p className="shop-desc">実績 {activeAchievements}/{r.need}個で出会える</p>}
+                  </div>
+                  {welcomed ? <div className="regular-conversation"><p>「{r.lines[(regularLines[r.id] || 0) % r.lines.length]}」</p><button onClick={() => setRegularLines(lines => ({ ...lines, [r.id]: (lines[r.id] || 0) + 1 }))} aria-label={`${r.name}と話す`}>話す</button></div> : known && <button className="regular-welcome" disabled={rice < r.cost} onClick={() => buyUpgrade(UPGRADES.find(u => u.id === r.id))}>{r.name}を迎える · {fmt(r.cost)} 粒</button>}
+                </div>;
+              })}
             </> : <>
               {BUILDINGS.every(b => !owned[b.id]) && <p className="empty-state">ショップで最初のおばあちゃんを迎えよう。</p>}
-              {BUILDINGS.filter(b => owned[b.id]).map(b => <div key={b.id} className="building-row"><div className="building-head"><b>{b.name}</b><span>×{owned[b.id]}</span></div><p className="shop-desc">{b.desc}</p><div className="building-icons" aria-hidden="true">{b.icon.repeat(Math.min(owned[b.id], 16))}{owned[b.id] > 16 && ` +${owned[b.id]-16}`}</div><div className="production">合計 毎秒 {fmtCps(b.cps * owned[b.id] * Game.buildingMultiplier(game,b.id) * Game.skinCps(activeSkin))} 粒</div></div>)}
+              {BUILDINGS.filter(b => owned[b.id]).map(b => <div key={b.id} className="building-row"><div className="building-head"><b>{b.name}</b><span>×{owned[b.id]}</span></div><p className="shop-desc">{b.desc}</p><div className="building-icons" aria-hidden="true">{b.icon.repeat(Math.min(owned[b.id], 16))}{owned[b.id] > 16 && ` +${owned[b.id]-16}`}</div><div className="production">合計 毎秒 {fmtCps(b.cps * owned[b.id] * Game.buildingMultiplier(game,b.id) * Game.skinCps(activeSkin) * Game.regularMultiplier(game))} 粒</div></div>)}
             </>}
           </>}
           {tab === "skin" && <>
@@ -682,7 +731,7 @@ function OnigiriClicker() {
               <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
               {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
             </details>
-            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>
         </section>
