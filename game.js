@@ -272,6 +272,25 @@ ACHIEVEMENTS.push(
   { id: "news", name: "米の情報通", desc: "米ニュースを10回めくる", secret: true, cond: s => s.newsClicks >= 10 },
 );
 
+// A collection to cook, not another economy: fixed rice costs, no currency
+// reward, and the only benefit is the achievement (and thus regular support).
+const RECIPES = [
+  { id: "shio_musubi", name: "塩むすび", cost: 150, hint: "具材「塩むすび」を購入", unlock: s => !!s.upgrades.shio },
+  { id: "omurice", name: "オムライス", cost: 5000, hint: "炊飯器を10台", unlock: s => (s.owned.suihanki || 0) >= 10 },
+  { id: "rice_burger", name: "ライスバーガー", cost: 50000, hint: "田んぼ10枚・コンビニ1店舗", unlock: s => (s.owned.conbini || 0) >= 1 && (s.owned.tanbo || 0) >= 10 },
+];
+const recipeUnlocked = (s, id) => RECIPES.some(r => r.id === id && (s.recipes?.[id] || r.unlock(s)));
+function cookRecipe(s, id) {
+  const r = RECIPES.find(x => x.id === id);
+  if (!r || s.recipes?.[id] || !r.unlock(s) || s.rice < r.cost) return s;
+  return { ...s, rice: s.rice - r.cost, recipes: { ...s.recipes, [id]: true } };
+}
+ACHIEVEMENTS.push(
+  { id: "recipe_shio_musubi", name: "基本にして至高", desc: "レシピ「塩むすび」を完成させる", cond: s => !!s.recipes?.shio_musubi },
+  { id: "recipe_omurice", name: "卵の布団でおやすみ", desc: "レシピ「オムライス」を完成させる", cond: s => !!s.recipes?.omurice },
+  { id: "recipe_rice_burger", name: "パンの座を奪う", desc: "レシピ「ライスバーガー」を完成させる", cond: s => !!s.recipes?.rice_burger },
+);
+
 const CHAPTERS = [
   { at: 0, name: "台所のすみっこ", news: ["おむすび一個から始まる、ちょっと大げさな話。", "近所の猫、開店前から並ぶ。買うとは言っていない。", "塩を少々、と書かれたレシピ。少々の審議が続く。", "おばあちゃん「お腹すいてない？」。すいてなくても握る。"] },
   { at: 1000, name: "町じゅうおむすび", news: ["町内会、回覧板を海苔に変更。読後はおいしく。", "炊飯器の保温ランプ、町の夜景に認定。", "コンビニ新商品、鮭・梅・おむすびの具のおむすび。", "市民アンケート、好きな形の98%が三角に。"] },
@@ -286,7 +305,7 @@ const chapterFor = total => CHAPTERS.filter(c => total >= c.at).at(-1);
 function newGame() {
   return { v: 2, rice: 0, totalRice: 0, clicks: 0, owned: {}, upgrades: {}, goldenClicks: 0, goldenMisses: 0,
     unlocked: {}, skinsOwned: { plain: true }, activeSkin: "plain", secret: false,
-    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [] };
+    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [], recipes: {} };
 }
 const skinCps = id => ({ genmai: 1.1, gold: 1.15, cosmos: 1.25 }[id] || 1);
 const skinClick = id => ({ yukari: 1.15, gold: 1.15, panda: 1.1, neko: 1.2 }[id] || 1);
@@ -412,7 +431,7 @@ function normalizeSave(data) {
   if (s.goldenMisses > 15 || s.goldenMisses > s.goldenClicks) throw Error("goldenMisses");
   for (const [key, ids, counts] of [
     ["owned", BUILDINGS.map(b => b.id), true], ["upgrades", UPGRADES.map(u => u.id)],
-    ["unlocked", ACHIEVEMENTS.map(a => a.id)], ["skinsOwned", SKINS.map(x => x.id)],
+    ["unlocked", ACHIEVEMENTS.map(a => a.id)], ["skinsOwned", SKINS.map(x => x.id)], ["recipes", RECIPES.map(r => r.id)],
   ]) {
     if (data[key] === undefined) continue;
     if (!data[key] || typeof data[key] !== "object" || Array.isArray(data[key])) throw Error(key);
@@ -463,7 +482,7 @@ function offlineProgress(s, now) {
   return { state: { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, savedAt: now }, gain };
 }
 
-return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
+return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES, recipeUnlocked, cookRecipe, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
   production, clickPower, activeClickPower, GOLDEN_EFFECTS, goldenSettings, goldenDuration, goldenOutcome, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();

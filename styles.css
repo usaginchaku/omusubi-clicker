@@ -19,7 +19,9 @@ button { color:inherit; }
 .rice-count > span { font-size:.55em; }
 .cps { font-size:13px; color:var(--muted); margin-top:6px; }
 .cps b { color:var(--ink); }
-.cps > span { margin:0 5px; opacity:.5; }
+.cps > span { display:inline-block; margin:0 5px; }
+.click-result { min-height:27px; color:var(--gold); font:20px 'DotGothic16',monospace; font-variant-numeric:tabular-nums; }
+.click-result small { font-size:12px; }
 .left { position:relative; height:288px; display:grid; place-items:center; isolation:isolate; }
 .rice-orbit { position:absolute; width:230px; height:230px; border:1px solid #ffd97a15; border-radius:50%; background:radial-gradient(circle,#ffd97a10,transparent 68%); z-index:-1; }
 .rice-orbit:after { content:''; position:absolute; inset:14px; border:1px dashed #ffd97a18; border-radius:50%; }
@@ -36,6 +38,11 @@ button { color:inherit; }
 .news { display:flex; flex-direction:column; gap:7px; width:100%; background:#14203080; border:1px solid #7389a333; border-radius:12px; padding:14px 16px; text-align:left; min-height:100px; margin-top:10px; }
 .news-label { font-family:'DotGothic16',monospace; color:var(--gold); font-size:12px; letter-spacing:1px; display:flex; justify-content:space-between; }
 .news-text { font-size:14px; line-height:1.7; }
+.news-box { position:relative; }
+.news-popover { position:absolute; top:100%; left:0; right:0; z-index:20; background:#24374b; border:1px solid #b8a16b; border-radius:10px; padding:12px; box-shadow:0 8px 22px #0006; }
+.news-popover p { margin:0 0 10px; font-size:14px; line-height:1.8; }
+.news-popover > div { display:flex; justify-content:flex-end; gap:8px; }
+.news-popover button { min-height:44px; padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:#344b60; }
 .right { min-width:0; }
 .tabbar { display:flex; padding:5px; background:#101b2b77; border:1px solid #687e9833; border-radius:12px; gap:4px; margin:0 0 10px; }
 .tabbtn { border:none; background:none; color:var(--muted); min-height:44px; flex:1; border-radius:6px; font-size:13px; font-weight:700; }
@@ -146,32 +153,85 @@ summary { cursor:pointer; padding:8px 0; min-height:44px; }
 .pair-goal summary { min-height:44px; align-content:center; color:var(--gold); cursor:pointer; }
 .pair-goal p { margin:4px 0 8px; }
 .pair-requirements { display:flex; gap:8px 16px; flex-wrap:wrap; color:var(--muted); }
+.collection-stats { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 10px; margin:0 2px 10px; color:var(--muted); font-size:12px; }
+.recipe-card { display:grid; grid-template-columns:112px minmax(0,1fr); align-items:center; gap:10px; margin-bottom:10px; padding:10px; border:1px solid var(--line); border-radius:12px; background:#29394e; }
+.recipe-card.cooked { border-color:#719c8b; background:#2b403f; }
+.recipe-card h2,.kitchen h2 { font-size:16px; margin:0; }
+.meal-art { display:block; width:100%; height:auto; }
+.recipe-card .meal-art { width:112px; }
+.recipe-cost { font-size:12px; line-height:1.6; color:var(--muted); margin:6px 0; }
+.recipe-card button,.meal-actions button,.kitchen-heading button { min-height:44px; padding:6px 12px; border:1px solid #719c8b; border-radius:8px; background:#334d49; font-size:13px; }
+.recipe-card button:disabled { background:#27374c; border-color:var(--line); color:var(--muted); }
+.kitchen { border:1px solid var(--line); border-radius:12px; padding:12px; background:#29394e; }
+.kitchen-heading { display:flex; align-items:center; gap:10px; }
+.kitchen-heading h2 { flex:1; }
+.kitchen-heading > span { font-size:12px; color:var(--gold); }
+.kitchen-heading button { background:transparent; border-color:var(--line); padding:6px 8px; }
+.kitchen > .meal-art { max-height:210px; }
+.kitchen > .recipe-cost { text-align:center; }
+.cook-action { display:block; width:100%; min-height:48px; border:1px solid var(--gold); border-radius:10px; background:#ffd97a; color:#263044; font-weight:700; font-size:15px; }
+.cook-action:disabled { background:#344257; border-color:var(--line); color:var(--muted); }
+.recipe-complete { color:#b7dbb1; font-size:12px; text-align:center; }
+.meal-reaction { margin-top:10px; padding:10px 12px; border-radius:10px; background:#192a3b; font-size:13px; }
+.meal-reaction b { color:var(--gold); font-size:12px; }
+.meal-reaction p { margin:4px 0 0; line-height:1.8; }
+.meal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.meal-steam { animation:steam 2s ease-in-out infinite alternate; }
+@keyframes steam { from { opacity:.35; transform:translateY(3px); } to { opacity:.8; transform:translateY(-3px); } }
 @media (max-width:759px) {
- .header { padding:8px 10px 5px; }
- .title { font-size:23px; }
- .chapter { font-size:11px; margin-top:0; }
- .main { display:flex; flex-direction:column; padding:0 12px; gap:10px; }
+ html,body,#root { height:100%; overflow:hidden; overscroll-behavior:none; }
+ .root { min-height:0; height:var(--app-height,100dvh); padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); touch-action:pan-y; }
+ .header { flex-shrink:0; padding:0 10px; }
+ .title { font-size:20px; }
+ .chapter { display:none; }
+ .main { display:flex; flex-direction:column; min-height:0; padding:0 10px; gap:6px; }
  .play-side,.right { width:100%; padding:0; }
- .rice-count { font-size:32px; }
- .cps { margin-top:2px; font-size:12px; }
- .left { height:178px; }
- .onigiri-btn { width:186px; height:186px; }
- .rice-orbit { width:170px; height:170px; }
- .play-caption { font-size:11px; min-height:19px; }
- .news { margin-top:5px; padding:9px 12px; min-height:76px; gap:4px; }
- .news-label { font-size:11px; }
- .news-text { font-size:12px; line-height:1.6; }
- .tabbar { margin-bottom:7px; padding:3px; }
+ .play-side { display:grid; grid-template-columns:128px minmax(0,1fr); grid-template-rows:92px 42px auto; column-gap:8px; flex-shrink:0; position:relative; }
+ .stats { grid-column:2; grid-row:1; align-self:center; text-align:left; min-width:0; }
+ .rice-count { font-size:28px; white-space:nowrap; }
+ .cps { display:flex; flex-direction:column; margin-top:0; font-size:12px; line-height:1.5; }
+ .cps > span { margin:0; }
+ .click-result { min-height:25px; font-size:18px; }
+ .left { grid-column:1; grid-row:1 / 3; height:134px; }
+ .onigiri-btn { width:128px; height:128px; touch-action:none; }
+ .rice-orbit { width:120px; height:120px; }
+ .play-caption { grid-column:2; grid-row:2; font-size:12px; min-height:0; text-align:left; align-self:center; line-height:1.5; }
+ .boost-label { display:flex; flex-direction:column; gap:0; }
+ .news-box { grid-column:1 / -1; }
+ .news { flex-direction:row; align-items:center; margin:0; padding:6px 10px; min-height:44px; gap:8px; }
+ .news-label { font-size:11px; flex-shrink:0; gap:4px; }
+ .news-text { font-size:12px; line-height:1.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .right { display:flex; flex-direction:column; flex:1; min-height:0; }
+ .tabbar { order:2; flex-shrink:0; margin:4px 0; padding:3px; }
  .tabbtn { min-height:44px; font-size:12px; border-radius:8px; }
- .panel-content { max-height:max(230px,calc(100svh - 530px)); min-height:200px; padding-right:3px; }
- .subnav { padding-bottom:8px; }
- .shop-item { padding:10px; gap:8px; }
+ .panel-content { flex:1; max-height:none; min-height:0; padding:0 3px 4px 1px; touch-action:pan-y; }
+ .subnav { padding-bottom:6px; gap:5px; }
+ .subnav button { font-size:12px; padding:2px; }
+ .shop-controls { padding-bottom:6px; gap:6px; }
+ .shop-controls .subnav { flex:1; }
+ .shop-item { padding:8px 10px; gap:6px 8px; }
  .shop-icon { font-size:25px; width:30px; }
  .shop-name { font-size:13px; }
  .shop-desc { font-size:12px; }
+ .building-item .shop-desc { display:none; }
+ .building-milestone { padding-top:4px; }
+ .shop-owned { margin-top:3px; }
  .shop-cost { font-size:12px; }
- .footer-stats { font-size:11px; padding:10px 8px; }
- .golden { width:62px; height:62px; font-size:38px; }
+ .featured-upgrade { min-height:56px; padding:7px 10px; gap:8px; margin-bottom:7px; }
+ .featured-upgrade .production { margin-top:2px; }
+ .footer-stats { display:none; }
+ .golden { width:62px; height:62px; font-size:38px; touch-action:none; }
+ .particle { font-size:17px; }
+ .toast-area { bottom:calc(66px + env(safe-area-inset-bottom)); }
+ .notice,.storage-warning { position:absolute; z-index:25; left:0; right:0; top:0; margin:0; box-shadow:0 8px 22px #0006; }
+ .storage-warning { top:auto; bottom:0; max-height:134px; overflow:auto; }
+ .recipe-card { grid-template-columns:90px minmax(0,1fr); padding:8px; gap:8px; }
+ .recipe-card .meal-art { width:90px; }
+ .kitchen { padding:8px; }
+ .kitchen > .meal-art { max-height:156px; }
+ .kitchen-heading { gap:6px; }
+ .kitchen-heading h2 { font-size:14px; }
+ .meal-reaction { padding:8px 10px; margin-top:8px; }
 }
 @media (max-width:359px) {
  .title { font-size:20px; }

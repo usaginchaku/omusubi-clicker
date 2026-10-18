@@ -312,3 +312,85 @@ test('regular support earned mid-frenzy strengthens normal play but cannot ampli
   assert.equal(G.activeClickPower(bought,boosts,1001),G.activeClickPower(s,boosts,1001));
   assert.equal(G.activeClickPower(bought,boosts,14000),G.clickPower(bought));
 });
+
+test('recipes unlock exactly at their ownership boundaries and stay discovered after cooking', () => {
+  const base=G.newGame();
+  assert.deepEqual(G.RECIPES.map(r=>[r.id,r.cost]),[['shio_musubi',150],['omurice',5000],['rice_burger',50000]]);
+  assert.equal(G.recipeUnlocked(base,'shio_musubi'),false);
+  assert.equal(G.recipeUnlocked({...base,upgrades:{shio:false}},'shio_musubi'),false);
+  assert.equal(G.recipeUnlocked({...base,upgrades:{shio:true}},'shio_musubi'),true);
+  assert.equal(G.recipeUnlocked({...base,owned:{suihanki:9}},'omurice'),false);
+  assert.equal(G.recipeUnlocked({...base,owned:{suihanki:10}},'omurice'),true);
+  assert.equal(G.recipeUnlocked({...base,owned:{tanbo:9,conbini:1}},'rice_burger'),false);
+  assert.equal(G.recipeUnlocked({...base,owned:{tanbo:10,conbini:0}},'rice_burger'),false);
+  assert.equal(G.recipeUnlocked({...base,owned:{tanbo:10,conbini:1}},'rice_burger'),true);
+  assert.equal(G.recipeUnlocked(base,'missing'),false);
+  const cooked=G.cookRecipe({...base,rice:150,upgrades:{shio:true}},'shio_musubi');
+  assert.equal(G.recipeUnlocked(cooked,'shio_musubi'),true, 'completed recipes remain viewable');
+  assert.equal(G.recipeUnlocked({...base,recipes:{shio_musubi:true}},'shio_musubi'),true, 'a restored finished recipe is always viewable');
+});
+
+test('cooking charges the exact fixed cost once and never creates currency or legacy stats', () => {
+  const s={...G.newGame(),rice:5000,totalRice:1e6,crafted:3,sold:4,profit:-5,owned:{suihanki:10}};
+  for (const bad of [{...s,rice:4999.99},{...s,owned:{suihanki:9}}]) assert.equal(G.cookRecipe(bad,'omurice'),bad);
+  assert.equal(G.cookRecipe(s,'missing'),s);
+  assert.equal(G.cookRecipe(s,'rice_burger'),s);
+  const cooked=G.cookRecipe(s,'omurice');
+  assert.equal(cooked.rice,0);
+  assert.deepEqual(cooked.recipes,{omurice:true});
+  for (const key of ['totalRice','crafted','sold','profit','clicks','goldenClicks']) assert.equal(cooked[key],s[key]);
+  assert.deepEqual(cooked.upgrades,s.upgrades);
+  assert.equal(G.production(cooked),G.production(s), 'no direct multiplier before the achievement');
+  const rich={...cooked,rice:1e9};
+  assert.equal(G.cookRecipe(rich,'omurice'),rich, 'already finished recipes are not charged again');
+  assert.deepEqual(s.recipes,{}, 'the original state is not mutated');
+});
+
+test('recipe achievements are stable and only strengthen regular support', () => {
+  const s={...G.newGame(),rice:1e5,owned:{suihanki:10,tanbo:10,conbini:1},upgrades:{shio:true,regular_cat:true}};
+  let out=G.awardAchievements(s);
+  for (const r of G.RECIPES) {
+    assert.equal(out.unlocked[`recipe_${r.id}`],undefined);
+    out=G.awardAchievements(G.cookRecipe(out,r.id));
+    assert.equal(out.unlocked[`recipe_${r.id}`],true);
+  }
+  const before=G.awardAchievements(s);
+  assert.equal(G.achievementCount(out),G.achievementCount(before)+3);
+  assert.ok(Math.abs(G.regularMultiplier(out)-(G.regularMultiplier(before)+3*.0025))<1e-12);
+  assert.ok(Math.abs(G.production(out)/G.production(before)-G.regularMultiplier(out)/G.regularMultiplier(before))<1e-12);
+});
+
+test('old saves without recipes load identically and recipe progress round-trips', () => {
+  for (const v of [1,2]) {
+    const old={v,rice:500,totalRice:9000,clicks:40,owned:{suihanki:10},upgrades:{shio:true},unlocked:{first:true}};
+    const {state,refund}=G.normalizeSave(old);
+    assert.equal(refund,0);
+    assert.deepEqual(state.recipes,{});
+    assert.equal(state.rice,500);
+    assert.equal(state.owned.suihanki,10);
+    assert.deepEqual(state,G.normalizeSave({...old,recipes:{}}).state);
+  }
+  const s=G.awardAchievements(G.cookRecipe({...G.newGame(),rice:1000,totalRice:1000,upgrades:{shio:true}},'shio_musubi'));
+  const restored=G.decodeSave(G.encodeSave(s)).state;
+  assert.deepEqual(restored.recipes,{shio_musubi:true});
+  assert.equal(restored.rice,850);
+  assert.equal(restored.unlocked.recipe_shio_musubi,true);
+  assert.equal(G.cookRecipe({...restored,rice:1e9},'shio_musubi').rice,1e9);
+  assert.equal(G.normalizeSave({v:2,recipes:{omurice:false}}).state.recipes.omurice,false);
+});
+
+test('invalid recipe saves are rejected instead of silently dropping progress', () => {
+  for (const recipes of [[],['omurice'],null,'omurice',1,{typo:true},{omurice:1},{omurice:'true'},{omurice:null}]) {
+    assert.throws(()=>G.normalizeSave({v:2,rice:100,recipes}));
+  }
+});
+
+test('a recipe achievement earned mid-frenzy cannot change the frozen 777 snapshot', () => {
+  const s=G.awardAchievements({...G.newGame(),rice:1e6,totalRice:1e6,clicks:500,owned:{obaachan:10,suihanki:10},upgrades:{finger_0:true,regular_cat:true}});
+  const boosts=G.addGoldenBoost({},'click',s,1000);
+  const cooked=G.awardAchievements(G.cookRecipe(s,'omurice'));
+  assert.equal(cooked.unlocked.recipe_omurice,true);
+  assert.ok(G.production(cooked)>G.production(s));
+  assert.equal(G.activeClickPower(cooked,boosts,1001),G.activeClickPower(s,boosts,1001));
+  assert.equal(G.activeClickPower(cooked,boosts,14000),G.clickPower(cooked));
+});

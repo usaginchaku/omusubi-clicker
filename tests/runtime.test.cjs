@@ -155,6 +155,14 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
       await button.props.onClick();
       flush();
     },
+    async pressAria(label) {
+      const button=find(tree,node=>node.type==='button' && node.props['aria-label']===label);
+      assert.ok(button, `button ${label} is rendered`);
+      assert.ok(!button.props.disabled, `button ${label} is enabled`);
+      await button.props.onClick();
+      flush();
+    },
+    button(label) { return find(tree,node=>node.type==='button' && text(node)===label); },
     async importFile(file) {
       const input=find(tree,node=>node.type==='input' && node.props.type==='file');
       const target={files:[file],value:'selected.txt'};
@@ -395,9 +403,83 @@ test('welcoming a regular saves once, grows production and shows the same rates 
   assert.match(runtime.screenText(),/まかないの鮭だけ/);
   runtime.advance(1000); runtime.tick(); runtime.pagehide();
   assert.equal(runtime.saved().rice,9000+Game.production(bought));
-  await runtime.press('施設のようす');
+  await runtime.press('施設');
   assert.match(runtime.screenText(),/合計 毎秒/);
   await runtime.press('セーブ');
   await runtime.press('最新コードをコピー');
   assert.equal(Game.decodeSave(runtime.clipboard[0]).state.upgrades.regular_cat,true);
+});
+
+test('cooking commits only at completion, saves before render and charges once on rapid taps', async () => {
+  const state={...Game.newGame(),rice:200,totalRice:200,upgrades:{shio:true},savedAt:1000};
+  const runtime=createRuntime(await loadCompiledApp(),state);
+  await runtime.press('図鑑');
+  await runtime.press('料理 0/3');
+  await runtime.pressAria('塩むすびを作る');
+  await runtime.press('米をよそう');
+  const shape=runtime.button('きゅっと握る');
+  shape.props.onClick(); shape.props.onClick(); runtime.flush();
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,200, 'preparation is free');
+  assert.deepEqual(runtime.saved().recipes,{});
+  const finish=runtime.button('完成させる · 150 粒');
+  assert.ok(finish, 'rapid preparation cannot skip payment');
+  finish.props.onClick(); finish.props.onClick();
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,50);
+  assert.equal(runtime.saved().recipes.shio_musubi,true);
+  assert.equal(runtime.saved().unlocked.recipe_shio_musubi,true);
+  runtime.flush();
+  assert.match(runtime.screenText(),/いいひとつまみだね/);
+  await runtime.press('‹ 料理一覧');
+  await runtime.pressAria('塩むすびを見る');
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,50, 'revisiting is free');
+});
+
+test('an unfinished dish can be left without charge and insufficient rice disables finishing', async () => {
+  const state={...Game.newGame(),rice:149,totalRice:149,upgrades:{shio:true},savedAt:1000};
+  const runtime=createRuntime(await loadCompiledApp(),state);
+  await runtime.press('図鑑'); await runtime.press('料理 0/3');
+  await runtime.pressAria('塩むすびを作る');
+  await runtime.press('米をよそう'); await runtime.press('きゅっと握る');
+  assert.equal(runtime.button('完成させる · 150 粒').props.disabled,true);
+  assert.match(runtime.screenText(),/あと 1 粒/);
+  await runtime.press('‹ 料理一覧'); runtime.pagehide();
+  assert.equal(runtime.saved().rice,149);
+  assert.deepEqual(runtime.saved().recipes,{});
+});
+
+test('finished dishes, free reactions and drawings survive save round-trip without creating rice', async () => {
+  const state={...Game.newGame(),rice:6000,totalRice:6000,owned:{suihanki:10},upgrades:{regular_cat:true},savedAt:1000};
+  const runtime=createRuntime(await loadCompiledApp(),state);
+  await runtime.press('図鑑'); await runtime.press('料理 0/3');
+  await runtime.pressAria('オムライスを作る');
+  await runtime.press('ごはんを炒める'); await runtime.press('卵で包む');
+  await runtime.press('完成させる · 5,000 粒');
+  await runtime.press('感想を聞く'); await runtime.press('ケチャップで描く');
+  assert.match(runtime.screenText(),/署名は肉球/);
+  runtime.pagehide(); assert.equal(runtime.saved().rice,1000);
+  await runtime.press('セーブ'); await runtime.press('最新コードをコピー');
+  const saved=runtime.clipboard[0];
+  assert.equal(Game.decodeSave(saved).state.recipes.omurice,true);
+  await runtime.importFile(new Blob([saved]));
+  await runtime.press('図鑑');
+  assert.ok(runtime.button('料理を見る'), 'import resets the transient cooking scene');
+  await runtime.pressAria('オムライスを見る');
+  assert.match(runtime.screenText(),/何兆文字/);
+  runtime.pagehide(); assert.equal(runtime.saved().rice,1000);
+});
+
+test('the expanded news reader retains the ten-page achievement and saves each turn', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame());
+  await runtime.pressAria('米ニュースを読む');
+  for(let i=0;i<9;i++) await runtime.press('次のニュース');
+  runtime.pagehide();
+  assert.equal(runtime.saved().newsClicks,9);
+  assert.equal(runtime.saved().unlocked.news,undefined);
+  await runtime.press('次のニュース'); runtime.pagehide();
+  assert.equal(runtime.saved().unlocked.news,true);
+  await runtime.press('閉じる'); runtime.pagehide();
+  assert.equal(runtime.saved().newsClicks,10, 'closing does not count as turning a page');
 });

@@ -1,6 +1,41 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES } = Game;
+const { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES } = Game;
+
+const MEAL_STEPS = {
+  shio_musubi: ["米をよそう", "きゅっと握る"],
+  omurice: ["ごはんを炒める", "卵で包む"],
+  rice_burger: ["ごはんを焼く", "具をはさむ"],
+};
+const MEAL_REACTIONS = {
+  shio_musubi: { grandma: "ひとつまみって言ったでしょ。いいひとつまみだね。", regular_cat: "握手はしません。おむすびに毛がつくので。", regular_cooker: "この米、私が蒸らしました。", regular_rabbit: "三角。月では見ない形ですね。", regular_future: "未来のコンビニでも、これが一番売れてます。" },
+  omurice: { grandma: "名前を書いてあげようか。何兆文字？", regular_cat: "ケチャップの署名は肉球です。代筆ではありません。", regular_cooker: "卵に包まれるのも、悪くないですね。", regular_rabbit: "黄色くて丸い。だいたい故郷です。", regular_future: "未来でも、最後のひと口は卵が足りません。" },
+  rice_burger: { grandma: "パンを切らしてね。米ならあるから。", regular_cat: "上も米。下も米。信頼できます。", regular_cooker: "上の米と下の米、同じ釜の仲間です。", regular_rabbit: "無重力だと中身だけ先に出勤します。", regular_future: "未来ではこれをパンに分類します。" },
+};
+
+function MealArt({ id, stage = 3, decoration = 0 }) {
+  const ready = stage >= 2;
+  return <svg className={`meal-art meal-stage-${stage}`} viewBox="0 0 280 180" role="img" aria-label={`${RECIPES.find(r => r.id === id)?.name || "料理"}${stage < 3 ? "を調理中" : "のできあがり"}${id === "omurice" && ready ? `、ケチャップは${["ハート", "米の字", "肉球"][decoration % 3]}` : ""}`}>
+    <ellipse cx="140" cy="151" rx="112" ry="18" fill="#14232e" opacity=".5" />
+    <ellipse cx="140" cy="139" rx="112" ry="27" fill="#d5e9df" stroke="#789c95" strokeWidth="3" />
+    <ellipse cx="140" cy="137" rx="91" ry="17" fill="#b4cdc4" />
+    {stage === 0 ? <g fill="#fff4d5" stroke="#c8c8a7" strokeWidth="1.5">{[[-24,0],[-9,-8],[8,-2],[24,3],[-17,11],[0,12],[17,13]].map(([x,y],i) => <ellipse key={i} cx={140+x} cy={119+y} rx="10" ry="5" transform={`rotate(${i*37} ${140+x} ${119+y})`} />)}</g> : id === "shio_musubi" ? <g strokeLinejoin="round">
+      <path d="M127 46Q140 26 153 46L200 122Q211 144 185 145H95Q69 144 80 122Z" fill="#fff7dd" stroke="#c6ceb8" strokeWidth="3" />
+      {[[-18,0],[15,-10],[-29,26],[32,30],[0,-24],[-7,17]].map(([x,y],i) => <ellipse key={i} cx={140+x} cy={84+y} rx="5" ry="2.5" fill="#e6dfc5" transform={`rotate(${i*31} ${140+x} ${84+y})`} />)}
+      {ready && <><path d="M120 111Q140 105 160 111V145H120Z" fill="#345347" /><path d="M130 114v25" stroke="#53735b" strokeWidth="4" strokeLinecap="round" /></>}
+    </g> : id === "omurice" ? <g>
+      <path d="M57 133Q65 71 140 69Q215 71 223 133Q190 153 140 151Q90 151 57 133Z" fill={ready ? "#f5c85d" : "#cf8153"} stroke={ready ? "#c69443" : "#a45d3e"} strokeWidth="3" />
+      <path d="M72 126Q88 81 148 82" stroke={ready ? "#ffe9a1" : "#e6ac70"} strokeWidth="7" fill="none" strokeLinecap="round" />
+      {ready && <g stroke="#c84938" strokeWidth="6" fill="none" strokeLinecap="round" strokeLinejoin="round">{decoration % 3 === 0 ? <path d="M139 128Q106 106 119 97Q132 91 140 104Q149 90 161 98Q174 109 139 128Z" /> : decoration % 3 === 1 ? <><path d="M140 94v38m-20-20h40m-35-16 6 7m24-7-6 7m-9 9-20 18m20-18 20 18" /></> : <><ellipse cx="141" cy="120" rx="12" ry="8" fill="#c84938" stroke="none" />{[[122,106],[132,98],[147,97],[159,106]].map(([x,y],i)=><ellipse key={i} cx={x} cy={y} rx="4" ry="6" fill="#c84938" stroke="none" />)}</>}</g>}
+    </g> : <g strokeWidth="3" strokeLinejoin="round">
+      <path d="M74 125Q140 112 206 125L204 143Q140 162 76 143Z" fill="#ead59a" stroke="#be975c" />
+      {ready && <><path d="m70 120 14-10 15 6 14-9 16 9 17-9 18 10 15-9 19 8 15-3-5 15H76Z" fill="#92b675" stroke="#6d9458" /><ellipse cx="140" cy="113" rx="65" ry="14" fill="#80573e" stroke="#594636" /><path d="m95 110 75 7 23-9" stroke="#c57550" fill="none" /></>}
+      <path d={ready ? "M72 99Q75 58 140 58Q205 58 208 99Q140 117 72 99Z" : "M72 108Q75 76 140 76Q205 76 208 108Q140 127 72 108Z"} fill="#f0dda6" stroke="#c5a66c" />
+      {[[-33,0],[-12,-12],[14,-9],[35,4],[0,10]].map(([x,y],i)=><ellipse key={i} cx={140+x} cy={(ready?84:99)+y} rx="5" ry="2.5" fill="#caab73" transform={`rotate(${i*38} ${140+x} ${(ready?84:99)+y})`} />)}
+    </g>}
+    {stage === 3 && <g className="meal-steam" stroke="#e9f5e1" strokeWidth="3" opacity=".55" fill="none" strokeLinecap="round"><path d="M116 32q-8-8 0-16m24 14q-8-8 0-16m24 18q-8-8 0-16" /></g>}
+  </svg>;
+}
 
 function RegularPortrait({ kind, known }) {
   return <svg viewBox="0 0 100 100" aria-hidden="true" className={`regular-portrait ${known ? "" : "unknown"}`}>
@@ -300,6 +335,9 @@ function OnigiriClicker() {
   const [shopTab, setShopTab] = useState("buildings");
   const [collectionTab, setCollectionTab] = useState("achievements");
   const [regularLines, setRegularLines] = useState({});
+  const [kitchen, setKitchen] = useState(null);
+  const [lastGain, setLastGain] = useState(null);
+  const [newsOpen, setNewsOpen] = useState(false);
   const [achFilter, setAchFilter] = useState("all");
   const [quantity, setQuantity] = useState(1);
   const [particles, setParticles] = useState([]);
@@ -323,6 +361,7 @@ function OnigiriClicker() {
   const boostRef = useRef(boosts);
   const frenzyRun = useRef(null);
   const saveCodeRef = useRef(null);
+  const saveMessageRef = useRef(null);
   const fileInputRef = useRef(null);
   const readingFileRef = useRef(false);
   const blocked = useRef(!!initial.error);
@@ -373,11 +412,32 @@ function OnigiriClicker() {
   const waitingRegulars = REGULARS.filter(r => activeAchievements >= r.need && !upgrades[r.id]);
   const nextRegular = REGULARS.find(r => activeAchievements < r.need);
   const nextPair = PAIR_UPGRADES.find(u => !upgrades[u.id] && !Game.upgradeAvailable(game, u) && Object.keys(u.requires).some(id => owned[id]));
+  const recipes = game.recipes || {};
+  const cookedCount = RECIPES.filter(r => recipes[r.id]).length;
+  const newRecipes = RECIPES.filter(r => !recipes[r.id] && Game.recipeUnlocked(game, r.id));
+  const selectedRecipe = kitchen && RECIPES.find(r => r.id === kitchen.id);
+  const diners = [{ id: "grandma", name: "おばあちゃん" }, ...REGULARS.filter(r => upgrades[r.id])];
+  const diner = diners[(kitchen?.diner || 0) % diners.length];
 
   const pushToast = useCallback(msg => {
     const id = pid.current++;
     setToasts(t => [...t.slice(-2), { id, msg }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3800);
+  }, []);
+
+  useEffect(() => {
+    // Keep import/copy results reachable when a keyboard shortens the list area.
+    if (saveMessage) saveMessageRef.current?.scrollIntoView({ block: "nearest" });
+  }, [saveMessage]);
+
+  useEffect(() => {
+    // Follow the visible height when the mobile keyboard or browser bars move.
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const resize = () => document.documentElement.style.setProperty("--app-height", `${viewport.height}px`);
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => viewport.removeEventListener("resize", resize);
   }, []);
 
   useEffect(() => {
@@ -451,9 +511,10 @@ function OnigiriClicker() {
   }, []);
 
   useEffect(() => {
+    if (newsOpen) return;
     const t = setInterval(() => setNewsIndex(n => n + 1), 14000);
     return () => clearInterval(t);
-  }, []);
+  }, [newsOpen]);
 
   const handleClick = e => {
     const now = Date.now();
@@ -470,10 +531,12 @@ function OnigiriClicker() {
     clearTimeout(squishTimer.current);
     squishTimer.current = setTimeout(() => setSquish(false), 100);
     const rect = e.currentTarget.parentElement.getBoundingClientRect();
-    const x = e.detail === 0 ? rect.width / 2 : e.clientX - rect.left;
-    const y = e.detail === 0 ? rect.height / 2 : e.clientY - rect.top;
+    // Put feedback above the finger; the static result also survives reduced motion.
+    const x = rect.width / 2 + (pid.current % 3 - 1) * 12;
+    const y = rect.height * 0.3;
     const id = pid.current++;
-    setParticles(p => [...p.slice(-14), { id, x, y, text: `+${fmtCps(gain).replace(/\.0$/, "")}` }]);
+    setLastGain(gain);
+    setParticles(p => [...p.slice(-7), { id, x, y, text: `+${fmtCps(gain).replace(/\.0$/, "")}粒` }]);
     setTimeout(() => setParticles(p => p.filter(q => q.id !== id)), 800);
   };
   const clickGolden = () => {
@@ -587,7 +650,7 @@ function OnigiriClicker() {
       goldenAvailable.current = false;
       setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
       scheduleGolden.current?.();
-      setParticles([]); setNotice("");
+      setParticles([]); setNotice(""); setKitchen(null); setLastGain(null);
       blocked.current = false;
       setStorageError("");
       try {
@@ -628,28 +691,30 @@ function OnigiriClicker() {
         <section className="play-side" aria-label="おむすびを握る場所">
           <div className="stats">
             <div className="rice-count">{fmt(rice)} <span>米粒</span></div>
-            <div className="cps">毎秒 <b>{fmtCps(cps)}</b> 粒 <span>／</span> 1クリック <b>{fmtCps(clickPower).replace(/\.0$/, "")}</b> 粒</div>
+            <div className="cps"><span>毎秒 <b>{fmtCps(cps)}</b> 粒</span><span>1タップ <b>+{fmtCps(clickPower).replace(/\.0$/, "")}</b> 粒</span></div>
+            <div className="click-result" aria-label={lastGain === null ? undefined : `直前の獲得 ${fmtCps(lastGain)}粒`}>{lastGain !== null && <>+{fmtCps(lastGain).replace(/\.0$/, "")} <small>粒</small></>}</div>
           </div>
           <div className={`left ${activeBoosts.length ? "boosting" : ""} ${activeBoosts.length === 2 ? "combo" : ""}`}>
             <div className="rice-orbit" aria-hidden="true" />
             <button className={`onigiri-btn ${squish ? "squish" : ""}`} onClick={handleClick} aria-label="おむすびを握る"><OnigiriSVG skin={skin} /></button>
             {particles.map(p => <span key={p.id} className="particle" style={{ left: p.x, top: p.y }}>{p.text}</span>)}
-            {golden && <button className="golden" style={{ left: `${golden.x}%`, top: `${golden.y}%` }} onClick={clickGolden} aria-label="金のおむすびをつかまえる">🍙<span>金！</span></button>}
+            {golden && <button className="golden" style={{ left: `min(${golden.x}%, calc(100% - 76px))`, top: `min(${golden.y}%, calc(100% - 76px))` }} onClick={clickGolden} aria-label="金のおむすびをつかまえる">🍙<span>金！</span></button>}
           </div>
           <div className="play-caption">
             {activeBoosts.length > 0 ? <span className="boost-label">{activeBoosts.map(([kind, effect]) => <span key={kind}>{kind === "production" ? "生産" : "クリック"} ×{effect.multiplier} · {Math.ceil((boosts[kind] - clock) / 1000)}秒</span>)}</span> : firstUnowned ? <span className={rice >= goalCost ? "goal-ready" : ""}>{firstUnowned.name}{quantity > 1 ? ` ${quantity}${firstUnowned.unit}` : ""} {rice >= goalCost ? "を迎えられます！" : `まで、あと ${fmt(Math.ceil(goalCost - rice))} 粒`}</span> : nextFinger ? `あと ${fmt(nextFinger.clickNeed - clicks)} 回握ると、新しい指の強化が解放` : `${skin.name} · ${skin.ability}`}
           </div>
-          <button className="news" aria-label="米ニュースをめくる" onClick={() => { setNewsIndex(n => n + 1); setGame(s => ({ ...s, newsClicks: s.newsClicks + 1 })); }}>
+          <div className="news-box"><button className="news" aria-label="米ニュースを読む" aria-expanded={newsOpen} onClick={() => setNewsOpen(v => !v)}>
             <span className="news-label">米ニュース <span aria-hidden="true">↻</span></span>
             <span className="news-text">{chapter.news[newsIndex % chapter.news.length]}</span>
           </button>
+          {newsOpen && <div className="news-popover" role="region" aria-label="米ニュース全文"><p>{chapter.news[newsIndex % chapter.news.length]}</p><div><button onClick={() => { setNewsIndex(n => n + 1); setGame(s => ({ ...s, newsClicks: s.newsClicks + 1 })); }}>次のニュース</button><button onClick={() => setNewsOpen(false)}>閉じる</button></div></div>}</div>
           {notice && <div className="notice" role="status"><span>{notice}</span><button onClick={() => setNotice("")} aria-label="おかえりのお知らせを閉じる">×</button></div>}
           {storageError && <div className="storage-warning" role="alert">{storageError}</div>}
         </section>
         <section className="right" aria-label="おむすび帝国">
           <nav className="tabbar" aria-label="ゲームメニュー">
             {[['shop','ショップ'],['collection','図鑑'],['skin','きせかえ'],['save','セーブ']].map(([id,label]) =>
-              <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)}>{label}{id === "collection" && waitingRegulars.length > 0 && <span className="new-dot" aria-label="新しい常連が来ています" />}</button>)}
+              <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
           </nav>
           <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}`}>
           {tab === "shop" && <>
@@ -686,13 +751,46 @@ function OnigiriClicker() {
             </>}
           </>}
           {tab === "collection" && <>
-            <div className="subnav" aria-label="図鑑の種類"><button aria-pressed={collectionTab === "achievements"} className={collectionTab === "achievements" ? "selected" : ""} onClick={() => setCollectionTab("achievements")}>実績 {achCount}/{achievements.length}</button><button aria-pressed={collectionTab === "buildings"} className={collectionTab === "buildings" ? "selected" : ""} onClick={() => setCollectionTab("buildings")}>施設のようす</button><button aria-pressed={collectionTab === "regulars"} className={collectionTab === "regulars" ? "selected" : ""} onClick={() => setCollectionTab("regulars")}>常連 {regularCount}/{REGULARS.length}</button></div>
+            <div className="subnav" aria-label="図鑑の種類"><button aria-pressed={collectionTab === "achievements"} className={collectionTab === "achievements" ? "selected" : ""} onClick={() => setCollectionTab("achievements")}>実績 {achCount}/{achievements.length}</button><button aria-pressed={collectionTab === "recipes"} className={collectionTab === "recipes" ? "selected" : ""} onClick={() => setCollectionTab("recipes")}>料理 {cookedCount}/{RECIPES.length}</button><button aria-pressed={collectionTab === "buildings"} className={collectionTab === "buildings" ? "selected" : ""} onClick={() => setCollectionTab("buildings")}>施設</button><button aria-pressed={collectionTab === "regulars"} className={collectionTab === "regulars" ? "selected" : ""} onClick={() => setCollectionTab("regulars")}>常連 {regularCount}/{REGULARS.length}</button></div>
             {collectionTab === "achievements" ? <>
+              <div className="collection-stats"><span>{chapter.name}</span><span>累計 {fmt(totalRice)} 粒 · {fmt(clicks)} タップ</span></div>
               <button className="regular-summary" onClick={() => setCollectionTab("regulars")}><span>常連の応援 <b>全生産 +{Number(regularBonus.toFixed(2))}%</b></span><span>{waitingRegulars.length ? `${waitingRegulars.length}人が来ています ›` : nextRegular ? `実績あと${nextRegular.need - activeAchievements}個で次の常連 ›` : "常連を見る ›"}</span></button>
               <div className="ach-progress"><span style={{width:`${achCount / achievements.length * 100}%`}} /></div>
               <div className="filters" aria-label="実績の絞り込み">{[['all','すべて'],['todo','未達成'],['done','達成済み']].map(([id,label]) => <button key={id} aria-pressed={achFilter === id} onClick={() => setAchFilter(id)}>{label}</button>)}</div>
               {shownAchievements.length === 0 && <p className="empty-state">これから最初のひとつを。</p>}
               {shownAchievements.map(a => <div key={a.id} className={`ach-item ${unlocked[a.id] ? "done" : "locked"}`}><AchIcon id={a.id} done={!!unlocked[a.id]} /><div><div className="ach-name">{a.secret && !unlocked[a.id] ? "ひみつの実績" : a.name}</div><div className="ach-desc">{a.secret && !unlocked[a.id] ? "いつもと違うところに、何かある。" : a.desc}{a.legacy ? " · 旧工房の記念" : ""}{a.building && !unlocked[a.id] && ` · 所持 ${owned[a.building] || 0}/${a.need}`}</div></div>{unlocked[a.id] && <span className="ach-check" aria-label="達成">✓</span>}</div>)}
+            </> : collectionTab === "recipes" ? <>
+              {selectedRecipe ? <div className="kitchen">
+                <div className="kitchen-heading"><button onClick={() => setKitchen(null)}>‹ 料理一覧</button><h2>{selectedRecipe.name}</h2><span>{kitchen.step === 3 ? "完成" : `${kitchen.step + 1}/3`}</span></div>
+                <MealArt id={selectedRecipe.id} stage={kitchen.step} decoration={kitchen.decoration} />
+                {kitchen.step < 3 ? <>
+                  <p className="recipe-cost">完成時に {fmt(selectedRecipe.cost)} 粒使う</p>
+                  {kitchen.step < 2 ? <button className="cook-action" onClick={() => setKitchen(k => ({ ...k, step: Math.min(kitchen.step + 1, 2) }))}>{MEAL_STEPS[selectedRecipe.id][kitchen.step]}</button> : <button className="cook-action" disabled={rice < selectedRecipe.cost} onClick={() => {
+                    let cooked = false;
+                    setGame(s => {
+                      const next = Game.cookRecipe(s, selectedRecipe.id);
+                      cooked = next !== s;
+                      return next;
+                    });
+                    if (cooked) {
+                      setKitchen(k => ({ ...k, step: 3 }));
+                      pushToast(`${selectedRecipe.name}、できあがり！`);
+                    }
+                  }}>完成させる · {fmt(selectedRecipe.cost)} 粒</button>}
+                  {kitchen.step === 2 && rice < selectedRecipe.cost && <p className="recipe-cost">あと {fmt(Math.ceil(selectedRecipe.cost - rice))} 粒</p>}
+                </> : <>
+                  <div className="recipe-complete">✓ 図鑑に記録済み</div>
+                  <div className="meal-reaction"><b>{diner.name}</b><p>「{MEAL_REACTIONS[selectedRecipe.id][diner.id]}」</p></div>
+                  <div className="meal-actions">{diners.length > 1 && <button onClick={() => setKitchen(k => ({ ...k, diner: k.diner + 1 }))}>感想を聞く</button>}{selectedRecipe.id === "omurice" && <button onClick={() => setKitchen(k => ({ ...k, decoration: k.decoration + 1 }))}>ケチャップで描く</button>}</div>
+                </>}
+              </div> : RECIPES.map(r => {
+                const known = Game.recipeUnlocked(game, r.id), done = recipes[r.id];
+                return <div className={`recipe-card ${done ? "cooked" : ""}`} key={r.id}>
+                  <MealArt id={r.id} stage={3} />
+                  <div><h2>{r.name}</h2><p className="recipe-cost">{done ? "✓ 図鑑に記録済み" : known ? `試作に使う米 ${fmt(r.cost)} 粒` : r.hint}</p>
+                  <button aria-label={`${r.name}${done ? "を見る" : "を作る"}`} disabled={!known} onClick={() => setKitchen({ id: r.id, step: done ? 3 : 0, diner: 0, decoration: 0 })}>{done ? "料理を見る" : known ? "作ってみる" : "未解放"}</button></div>
+                </div>;
+              })}
             </> : collectionTab === "regulars" ? <>
               <div className="regular-total"><span>実績 {activeAchievements}個</span><b>全生産 +{Number(regularBonus.toFixed(2))}%</b></div>
               {REGULARS.map(r => {
@@ -722,7 +820,7 @@ function OnigiriClicker() {
             <div className="craft-row"><button className="craft-btn" onClick={copySave}>{blocked.current ? "保護中コードをコピー" : "最新コードをコピー"}</button><button className="craft-btn" onClick={() => downloadSave(makeSaveCode())}>ファイルに保存</button></div>
             <button className="craft-btn file-load" disabled={readingFile} onClick={() => fileInputRef.current?.click()}>{readingFile ? "読み込み中…" : "ファイルを読み込む"}</button>
             <input ref={fileInputRef} type="file" accept=".txt,text/plain" aria-label="セーブファイル" hidden onChange={importFile} />
-            <p className="save-message" role="status">{saveMessage}</p>
+            <p ref={saveMessageRef} className="save-message" role="status">{saveMessage}</p>
             <p className="panel-help">読み込みは今の進行を置き換えます。残したい進行は先に保存してください。</p>
             <details className="save-help" open={showSaveCode} onToggle={e => setShowSaveCode(e.currentTarget.open)}><summary>コードで読み込む・手動コピー</summary>
               <label htmlFor="save-code" className="section-label">セーブコード</label>
@@ -731,7 +829,7 @@ function OnigiriClicker() {
               <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
               {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
             </details>
-            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>
         </section>
