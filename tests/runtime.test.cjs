@@ -95,7 +95,7 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
       body: { appendChild() {} },
       createElement: () => ({ click() { if (options.downloadFailed) throw Error('download'); downloads.push({name:this.download,blob:objectUrls.get(this.href)}); }, remove() {} }),
     },
-    window: eventTarget,
+    window: { ...eventTarget, matchMedia: options.wide ? () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) : undefined },
     localStorage: {
       getItem: key => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
@@ -334,6 +334,7 @@ test('import clears temporary effects and cancelled file selection does nothing'
 test('next purchase hint follows the selected bulk quantity and never promises an unaffordable buy', async () => {
   const runtime=createRuntime(await loadCompiledApp(), {...Game.newGame(),rice:15,totalRice:15,savedAt:1000});
   assert.match(runtime.caption(),/迎えられます/);
+  await runtime.press('ショップ');
   runtime.chooseQuantity(10);
   assert.match(runtime.caption(),/10人.*あと 293 粒/);
   assert.doesNotMatch(runtime.caption(),/迎えられます/);
@@ -559,4 +560,35 @@ test('every destination has three readable postcards and collection completion e
   await runtime.press('虹のお皿を使う'); runtime.pagehide();
   assert.equal(runtime.saved().activePlate,'rainbow');
   assert.equal(runtime.saved().rice,10000);
+});
+
+test('phones open on the onigiri tab; shop, skins in the collection and saving stay one tap away', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),{...startingGame(),rice:3000,totalRice:3000});
+  const hasDot=label=>JSON.stringify(runtime.button(label)).includes('買える強化があります');
+  assert.ok(runtime.button('握る'));
+  assert.equal(runtime.button('施設'),undefined,'no shop list competes with the onigiri');
+  assert.ok(hasDot('ショップ'),'affordable upgrades are signalled from the onigiri tab');
+  runtime.clickOnigiri();
+  await runtime.press('ショップ');
+  assert.ok(runtime.button('施設') && !hasDot('ショップ'));
+  await runtime.press('図鑑'); await runtime.press('きせかえ');
+  await runtime.press('ぱんだむすびクリック力 +10%2,500 粒');
+  runtime.clickOnigiri(); // the slim bar keeps the onigiri tappable on other tabs
+  runtime.pagehide();
+  assert.equal(runtime.saved().activeSkin,'panda');
+  assert.equal(runtime.saved().clicks,2);
+  assert.equal(runtime.saved().rice,3000+1-2500+Game.clickPower(runtime.saved()));
+  await runtime.press('握る');
+  assert.equal(runtime.button('きせかえ'),undefined);
+  await runtime.press('セーブ'); await runtime.press('最新コードをコピー');
+  assert.equal(Game.decodeSave(runtime.clipboard[0]).state.activeSkin,'panda');
+});
+
+test('wide screens keep the shop beside the onigiri without a separate tap tab', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame(),Math.random,{wide:true});
+  assert.equal(runtime.button('握る'),undefined);
+  assert.equal(runtime.button('ショップ').props['aria-current'],'page');
+  assert.ok(runtime.button('施設'));
+  runtime.clickOnigiri(); runtime.pagehide();
+  assert.equal(runtime.saved().rice,101);
 });

@@ -225,22 +225,40 @@ summary { cursor:pointer; padding:8px 0; min-height:44px; }
  .chapter { display:none; }
  .main { display:flex; flex-direction:column; min-height:0; padding:0 10px; gap:6px; }
  .play-side,.right { width:100%; padding:0; }
- .play-side { display:grid; grid-template-columns:128px minmax(0,1fr); grid-template-rows:92px 42px auto; column-gap:8px; flex-shrink:0; position:relative; }
- .stats { grid-column:2; grid-row:1; align-self:center; text-align:left; min-width:0; }
- .rice-count { font-size:28px; white-space:nowrap; }
- .cps { display:flex; flex-direction:column; margin-top:0; font-size:12px; line-height:1.5; }
- .cps > span { margin:0; }
- .click-result { min-height:25px; font-size:18px; }
- .left { grid-column:1; grid-row:1 / 3; height:134px; }
- .onigiri-btn { width:128px; height:128px; touch-action:none; }
- .rice-orbit { width:120px; height:120px; }
- .play-caption { grid-column:2; grid-row:2; font-size:12px; min-height:0; text-align:left; align-self:center; line-height:1.5; }
- .boost-label { display:flex; flex-direction:column; gap:0; }
- .news-box { grid-column:1 / -1; }
+ .play-side { position:relative; flex-shrink:0; min-height:0; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+ .rice-count { white-space:nowrap; }
+ .onigiri-btn { touch-action:none; }
+ /* 握る: counters on top, the onigiri takes every remaining pixel above the menu. */
+ .view-play .play-side { flex:1; display:flex; flex-direction:column; }
+ .view-play .stats { flex-shrink:0; padding-top:2px; }
+ .view-play .rice-count { font-size:clamp(32px,10vw,44px); }
+ .view-play .cps { margin-top:2px; font-size:14px; line-height:1.6; }
+ .view-play .click-result { min-height:28px; }
+ .view-play .left { flex:1; min-height:150px; height:auto; container-type:size; }
+ .view-play .onigiri-btn { width:min(72vw,40vh); height:min(72vw,40vh); width:min(100cqw,100cqh,360px); height:min(100cqw,100cqh,360px); }
+ .view-play .rice-orbit { width:min(66vw,37vh); height:min(66vw,37vh); width:calc(min(100cqw,100cqh,360px) * .9); height:calc(min(100cqw,100cqh,360px) * .9); }
+ .view-play .play-caption { flex-shrink:0; min-height:24px; padding:2px 0 6px; font-size:13px; line-height:1.5; }
+ .view-play .news-popover { top:auto; bottom:100%; }
+ .view-play .right { flex:0 0 auto; }
+ /* Other tabs: a slim bar keeps rice, production and the golden onigiri in reach. */
+ .root:not(.view-play) .header { display:none; }
+ .root:not(.view-play) .play-side { display:grid; grid-template-columns:64px minmax(0,1fr); column-gap:10px; align-items:center; padding-top:4px; }
+ .root:not(.view-play) .stats { grid-column:2; grid-row:1; text-align:left; min-width:0; }
+ .root:not(.view-play) .rice-count { font-size:26px; }
+ .root:not(.view-play) .cps { display:flex; flex-wrap:wrap; gap:0 12px; margin-top:0; font-size:12px; line-height:1.5; }
+ .root:not(.view-play) .cps > span { margin:0; }
+ .root:not(.view-play) .click-result,.root:not(.view-play) .play-caption,.root:not(.view-play) .news-box,.root:not(.view-play) .rice-orbit { display:none; }
+ .root:not(.view-play) .left { grid-column:1; grid-row:1; height:64px; }
+ .root:not(.view-play) .onigiri-btn { width:64px; height:64px; }
+ .root:not(.view-play) .golden { position:fixed; left:auto !important; top:calc(env(safe-area-inset-top) + 4px) !important; right:calc(env(safe-area-inset-right) + 10px); width:58px; height:58px; font-size:34px; }
+ .root:not(.view-play) .notice,.root:not(.view-play) .storage-warning { position:static; grid-column:1 / -1; margin:6px 0 0; box-shadow:none; max-height:none; }
  .news { flex-direction:row; align-items:center; margin:0; padding:6px 10px; min-height:44px; gap:8px; }
  .news-label { font-size:11px; flex-shrink:0; gap:4px; }
  .news-text { font-size:12px; line-height:1.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
  .right { display:flex; flex-direction:column; flex:1; min-height:0; }
+ .collection-nav { gap:4px; }
+ .collection-nav button { padding:2px 0; line-height:1.35; }
+ .collection-nav .sub-count { display:block; }
  .tabbar { order:2; flex-shrink:0; margin:4px 0; padding:3px; }
  .tabbtn { min-height:44px; font-size:12px; border-radius:8px; }
  .panel-content { flex:1; max-height:none; min-height:0; padding:0 3px 4px 1px; touch-action:pan-y; }

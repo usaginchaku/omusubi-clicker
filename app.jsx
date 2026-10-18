@@ -393,6 +393,7 @@ function OnigiriSVG({ skin }) {
 
 const STORAGE_KEY = "omusubi-clicker-save-v2";
 const IMPORT_BACKUP_KEY = `${STORAGE_KEY}-before-import`;
+const WIDE_QUERY = "(min-width: 760px)";
 function loadInitialGame() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -409,7 +410,9 @@ function OnigiriClicker() {
   const [initial] = useState(loadInitialGame);
   const [game, renderGame] = useState(initial.state);
   const { rice, totalRice, clicks, owned, upgrades, unlocked, skinsOwned, activeSkin } = game;
-  const [tab, setTab] = useState("shop");
+  const [tab, setTab] = useState("play");
+  // Wide screens keep the onigiri beside the shop, so "握る" is a phone-only tab.
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(WIDE_QUERY).matches);
   const [shopTab, setShopTab] = useState("buildings");
   const [collectionTab, setCollectionTab] = useState("achievements");
   const [regularLines, setRegularLines] = useState({});
@@ -467,6 +470,7 @@ function OnigiriClicker() {
     return next;
   }, []);
 
+  const view = wide && tab === "play" ? "shop" : tab;
   const skin = SKINS.find(s => s.id === activeSkin) || SKINS[0];
   const baseCps = Game.production(game);
   const activeBoosts = Object.entries(Game.GOLDEN_EFFECTS).filter(([kind]) => boosts[kind] > clock);
@@ -543,6 +547,15 @@ function OnigiriClicker() {
     resize();
     viewport.addEventListener("resize", resize);
     return () => viewport.removeEventListener("resize", resize);
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia?.(WIDE_QUERY);
+    if (!query) return;
+    const update = () => setWide(query.matches);
+    update();
+    query.addEventListener?.("change", update);
+    return () => query.removeEventListener?.("change", update);
   }, []);
 
   useEffect(() => {
@@ -788,7 +801,7 @@ function OnigiriClicker() {
   };
 
   return (
-    <div className="root" style={{ "--rice-a": skin.riceA, "--rice-b": skin.riceB }}>
+    <div className={`root view-${view}`} style={{ "--rice-a": skin.riceA, "--rice-b": skin.riceB }}>
       <header className="header">
         <h1 className="title"><button className="title-emoji" aria-label="ひみつのおむすび" onClick={pokeTitle}>🍙</button> おむすびくりっかー</h1>
         <div className="chapter">{chapter.name}</div>
@@ -819,11 +832,11 @@ function OnigiriClicker() {
         </section>
         <section className="right" aria-label="おむすび帝国">
           <nav className="tabbar" aria-label="ゲームメニュー">
-            {[['shop','ショップ'],['collection','図鑑'],['skin','きせかえ'],['save','セーブ']].map(([id,label]) =>
-              <button key={id} className={`tabbtn ${tab === id ? "active" : ""}`} aria-current={tab === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
+            {[['play','握る'],['shop','ショップ'],['collection','図鑑'],['save','セーブ']].filter(([id]) => !wide || id !== "play").map(([id,label]) =>
+              <button key={id} className={`tabbtn ${view === id ? "active" : ""}`} aria-current={view === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "shop" && view !== "shop" && affordableUpgrades > 0 && <span className="new-dot" aria-label="買える強化があります" />}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
           </nav>
-          <div className="panel-content" key={`${tab}-${shopTab}-${collectionTab}-${outingView}-${selectedOuting}-${postcard}`}>
-          {tab === "shop" && <>
+          {view !== "play" && <div className="panel-content" key={`${view}-${shopTab}-${collectionTab}-${outingView}-${selectedOuting}-${postcard}`}>
+          {view === "shop" && <>
             <div className="shop-controls"><div className="subnav" aria-label="ショップの種類">
               <button className={shopTab === "buildings" ? "selected" : ""} aria-pressed={shopTab === "buildings"} onClick={() => setShopTab("buildings")}>施設</button>
               <button className={shopTab === "upgrades" ? "selected" : ""} aria-pressed={shopTab === "upgrades"} onClick={() => setShopTab("upgrades")}>強化 {affordableUpgrades > 0 && <span className="count-badge">{affordableUpgrades}</span>}</button>
@@ -856,8 +869,9 @@ function OnigiriClicker() {
               {collectedUpgrades.length > 0 && <details className="owned-upgrades"><summary>購入済みの強化 {collectedUpgrades.length} / {UPGRADES.length}</summary>{collectedUpgrades.map(u => <div key={u.id}><b>{u.name}</b><span>{u.desc}</span></div>)}</details>}
             </>}
           </>}
-          {tab === "collection" && <>
-            <div className="subnav" aria-label="図鑑の種類"><button aria-pressed={collectionTab === "achievements"} className={collectionTab === "achievements" ? "selected" : ""} onClick={() => setCollectionTab("achievements")}>実績 {achCount}/{achievements.length}</button><button aria-pressed={collectionTab === "recipes"} className={collectionTab === "recipes" ? "selected" : ""} onClick={() => setCollectionTab("recipes")}>料理 {cookedCount}/{RECIPES.length}</button><button aria-pressed={collectionTab === "buildings"} className={collectionTab === "buildings" ? "selected" : ""} onClick={() => setCollectionTab("buildings")}>施設</button><button aria-pressed={collectionTab === "regulars"} className={collectionTab === "regulars" ? "selected" : ""} onClick={() => setCollectionTab("regulars")}>常連 {regularCount}/{REGULARS.length}</button></div>
+          {view === "collection" && <>
+            <div className="subnav collection-nav" aria-label="図鑑の種類">{[["achievements", "実績", `${achCount}/${achievements.length}`], ["recipes", "料理", `${cookedCount}/${RECIPES.length}`], ["buildings", "施設"], ["regulars", "常連", `${regularCount}/${REGULARS.length}`], ["skins", "きせかえ"]].map(([id, label, count]) =>
+              <button key={id} aria-pressed={collectionTab === id} className={collectionTab === id ? "selected" : ""} onClick={() => setCollectionTab(id)}>{label}{count && <span className="sub-count">{` ${count}`}</span>}</button>)}</div>
             {collectionTab === "achievements" ? <>
               <div className="collection-stats"><span>{chapter.name}</span><span>累計 {fmt(totalRice)} 粒 · {fmt(clicks)} タップ</span></div>
               <button className="regular-summary" onClick={() => setCollectionTab("regulars")}><span>常連の応援 <b>全生産 +{Number(regularBonus.toFixed(2))}%</b></span><span>{waitingRegulars.length ? `${waitingRegulars.length}人が来ています ›` : nextRegular ? `実績あと${nextRegular.need - activeAchievements}個で次の常連 ›` : "常連を見る ›"}</span></button>
@@ -950,18 +964,17 @@ function OnigiriClicker() {
                   {welcomed ? <div className="regular-conversation"><p>「{r.lines[(regularLines[r.id] || 0) % r.lines.length]}」</p><button onClick={() => setRegularLines(lines => ({ ...lines, [r.id]: (lines[r.id] || 0) + 1 }))} aria-label={`${r.name}と話す`}>話す</button></div> : known && <button className="regular-welcome" disabled={rice < r.cost} onClick={() => buyUpgrade(UPGRADES.find(u => u.id === r.id))}>{r.name}を迎える · {fmt(r.cost)} 粒</button>}
                 </div>;
               })}
+            </> : collectionTab === "skins" ? <>
+              <p className="panel-help">着替えると能力も変わる。購入済みなら何度でも。</p>
+              <div className="skin-grid">{SKINS.map(s => <button key={s.id} className={`skin-card ${activeSkin === s.id ? "active" : ""}`} aria-pressed={activeSkin === s.id} disabled={!skinsOwned[s.id] && rice < s.cost} onClick={() => buySkin(s)}>
+                <div className="skin-preview" aria-hidden="true"><OnigiriSVG skin={s} /></div><div className="skin-name">{s.name}</div><div className="skin-ab">{s.ability}</div><div className="skin-price">{activeSkin === s.id ? "着用中" : skinsOwned[s.id] ? "着替える" : `${fmt(s.cost)} 粒`}</div>
+              </button>)}</div>
             </> : <>
               {BUILDINGS.every(b => !owned[b.id]) && <p className="empty-state">ショップで最初のおばあちゃんを迎えよう。</p>}
               {BUILDINGS.filter(b => owned[b.id]).map(b => <div key={b.id} className="building-row"><div className="building-head"><b>{b.name}</b><span>×{owned[b.id]}</span></div><p className="shop-desc">{b.desc}</p><div className="building-icons" aria-hidden="true">{b.icon.repeat(Math.min(owned[b.id], 16))}{owned[b.id] > 16 && ` +${owned[b.id]-16}`}</div><div className="production">合計 毎秒 {fmtCps(b.cps * owned[b.id] * Game.buildingMultiplier(game,b.id) * Game.skinCps(activeSkin) * Game.regularMultiplier(game))} 粒</div></div>)}
             </>}
           </>}
-          {tab === "skin" && <>
-            <p className="panel-help">着替えると能力も変わる。購入済みなら何度でも。</p>
-            <div className="skin-grid">{SKINS.map(s => <button key={s.id} className={`skin-card ${activeSkin === s.id ? "active" : ""}`} aria-pressed={activeSkin === s.id} disabled={!skinsOwned[s.id] && rice < s.cost} onClick={() => buySkin(s)}>
-              <div className="skin-preview" aria-hidden="true"><OnigiriSVG skin={s} /></div><div className="skin-name">{s.name}</div><div className="skin-ab">{s.ability}</div><div className="skin-price">{activeSkin === s.id ? "着用中" : skinsOwned[s.id] ? "着替える" : `${fmt(s.cost)} 粒`}</div>
-            </button>)}</div>
-          </>}
-          {tab === "save" && <>
+          {view === "save" && <>
             <div className="save-status"><b>{storageError ? "自動保存を確認してください" : "この端末に自動保存"}</b><span>{lastSaved ? `最終保存 ${new Date(lastSaved).toLocaleTimeString('ja-JP')}` : "5秒ごと・画面を閉じるときに保存"}</span></div>
             <p className="panel-help">閉じている間も最大4時間、生産が進みます。バックアップ・別端末への引き継ぎはこちら。</p>
             <div className="craft-row"><button className="craft-btn" onClick={copySave}>{blocked.current ? "保護中コードをコピー" : "最新コードをコピー"}</button><button className="craft-btn" onClick={() => downloadSave(makeSaveCode())}>ファイルに保存</button></div>
@@ -978,7 +991,7 @@ function OnigiriClicker() {
             </details>
             <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>料理の「おすそわけ」は、施設を育てると届け先が増えます。作った料理を米粒で届けると、場所と料理ごとに1枚、全27枚の絵はがきが届きます。3・12・27枚でお皿を獲得。お皿は見た目だけが変わり、読み返しや付け替えは無料です。期限はありません。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
-          </div>
+          </div>}
         </section>
       </main>
       <footer className="footer-stats">累計 {fmt(totalRice)} 粒 <span>·</span> {clicks.toLocaleString('ja-JP')} 回握った <span>·</span> 実績 {achCount}/{achievements.length}</footer>

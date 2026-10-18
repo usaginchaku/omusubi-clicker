@@ -33,5 +33,5 @@ test('the deployed Babel preset produces a runnable classic React script', async
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../game.js'), 'utf8'), app);
   new vm.Script(code).runInContext(app);
   assert.equal(rendered.type, 'div');
-  assert.equal(rendered.props.className, 'root');
+  assert.equal(rendered.props.className, 'root view-play');
 });
