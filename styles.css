@@ -28,7 +28,8 @@ button { color:inherit; }
 .onigiri-btn:active,.onigiri-btn.squish { transform:scale(.92) rotate(-2deg); }
 .boosting .rice-orbit { box-shadow:0 0 50px #ffd97a25; border-color:#ffd97a99; }
 .play-caption { min-height:28px; font-size:12px; color:var(--muted); text-align:center; }
-.boost-label { color:var(--gold); font-weight:700; }
+.boost-label { color:var(--gold); font-weight:700; display:flex; justify-content:center; gap:12px; flex-wrap:wrap; }
+.combo .rice-orbit { box-shadow:0 0 55px #ffcf6755; border-color:#ffebac; }
 .goal-ready { color:var(--gold); }
 .particle { position:absolute; pointer-events:none; color:var(--gold); font-family:'DotGothic16',monospace; font-size:20px; text-shadow:0 2px 2px #000; animation:floatUp .8s ease-out forwards; z-index:5; }
 @keyframes floatUp { from { opacity:1; transform:translate(-50%,-25%); } to { opacity:0; transform:translate(-50%,-80px); } }
@@ -110,6 +111,9 @@ summary { cursor:pointer; padding:8px 0; min-height:44px; }
 .craft-btn:disabled { color:#94a5bd; background:#27374c; }
 .save-message { font-size:13px; line-height:1.7; color:var(--gold); min-height:24px; }
 .save-help p { color:var(--muted); line-height:1.8; }
+.save-help a { color:var(--gold); text-underline-offset:3px; }
+.save-help summary { min-height:44px; align-content:center; cursor:pointer; }
+.file-load { width:100%; }
 .notice,.storage-warning { margin-top:10px; padding:12px; background:#253c39; border:1px solid #658e7c; border-radius:10px; font-size:13px; line-height:1.7; }
 .notice { display:flex; align-items:center; gap:8px; }
 .notice button { border:0; background:none; min-width:44px; min-height:44px; font-size:24px; }

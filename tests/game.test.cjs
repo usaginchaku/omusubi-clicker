@@ -161,12 +161,41 @@ test('offline production uses upgrades, caps at four hours, and ignores backward
 
 test('production settles only the active boost interval, including across suspension', () => {
   const s={...G.newGame(),owned:{obaachan:1},rice:100,totalRice:100};
-  const boost={kind:'production',until:31000};
+  const boost={production:31000,click:14000};
   const out=G.advanceProduction(s,1000,61000,boost);
   assert.equal(out.rice,100 + .5 * (30 * 7 + 30));
   assert.equal(out.savedAt,61000);
   assert.equal(G.advanceProduction(out,61000,61000,boost).rice,out.rice);
   assert.equal(G.advanceProduction(s,1000,1000+24*3600000).rice,7300);
+});
+
+test('rare 777x clicks stack with production-linked fingers, refresh independently and expire exactly', () => {
+  const s={...G.newGame(),owned:{suihanki:1},upgrades:{shio:true,finger_0:true}};
+  let boosts=G.addGoldenBoost({},'production',s,1000);
+  boosts=G.addGoldenBoost(boosts,'click',s,26000);
+  const power=now=>G.clickPower(s,G.boostMultiplier(boosts,'production',now))*G.boostMultiplier(boosts,'click',now);
+  assert.equal(power(26000),(2+4*7*.02)*777);
+  assert.equal(power(31000),(2+4*.02)*777, 'production expires while click frenzy remains');
+  assert.equal(power(39000),2+4*.02, 'click effect ends at its boundary');
+  boosts=G.addGoldenBoost(boosts,'click',s,30000);
+  assert.equal(boosts.production,31000);
+  assert.equal(boosts.click,43000, 'same effect refreshes, rather than stacking duration');
+  assert.equal(G.boostMultiplier(boosts,'click',30000),777, 'never 777 squared');
+});
+
+test('golden upgrades unlock by catches, preserve save IDs and improve timing multiplicatively', () => {
+  let s={...G.newGame(),rice:1e9,totalRice:1e9,goldenClicks:6};
+  assert.equal(G.buyUpgrade(s,'lucky_cat'),s);
+  s=G.buyUpgrade({...s,goldenClicks:7},'lucky_cat');
+  assert.deepEqual(G.goldenSettings(s),{wait:.8,lifetime:30,duration:1});
+  s=G.buyUpgrade({...s,goldenClicks:27},'lucky_thermos');
+  assert.equal(G.addGoldenBoost({},'click',s,1000).click,27000);
+  assert.equal(G.addGoldenBoost({},'production',s,1000).production,61000);
+  s=G.buyUpgrade({...s,goldenClicks:77},'lucky_schedule');
+  const settings=G.goldenSettings({...s,activeSkin:'sekihan'});
+  assert.ok(Math.abs(settings.wait-.48)<1e-12);
+  assert.equal(settings.lifetime,60);
+  assert.deepEqual(G.decodeSave(G.encodeSave(s)).state.upgrades,s.upgrades);
 });
 
 test('new achievement collection contains no retired workshop objectives', () => {

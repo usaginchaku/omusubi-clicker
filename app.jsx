@@ -250,6 +250,7 @@ function OnigiriSVG({ skin }) {
 }
 
 const STORAGE_KEY = "omusubi-clicker-save-v2";
+const IMPORT_BACKUP_KEY = `${STORAGE_KEY}-before-import`;
 function loadInitialGame() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -274,25 +275,34 @@ function OnigiriClicker() {
   const [particles, setParticles] = useState([]);
   const [squish, setSquish] = useState(false);
   const [golden, setGolden] = useState(null);
-  const [boost, setBoost] = useState(null);
+  const [boosts, setBoosts] = useState({});
   const [clock, setClock] = useState(Date.now());
   const [newsIndex, setNewsIndex] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [notice, setNotice] = useState(initial.notice);
   const [saveText, setSaveText] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [showSaveCode, setShowSaveCode] = useState(false);
+  const [readingFile, setReadingFile] = useState(false);
+  const [importBackup, setImportBackup] = useState(() => {
+    try { return localStorage.getItem(IMPORT_BACKUP_KEY) || ""; } catch { return ""; }
+  });
   const [storageError, setStorageError] = useState(initial.error);
   const [lastSaved, setLastSaved] = useState(0);
   const gameRef = useRef(game);
-  const boostRef = useRef(boost);
+  const boostRef = useRef(boosts);
+  const saveCodeRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const readingFileRef = useRef(false);
   const blocked = useRef(!!initial.error);
   const pid = useRef(0);
   const titleClicks = useRef(0);
   const lastTick = useRef(Date.now());
   const goldTimer = useRef(null);
+  const goldenAvailable = useRef(false);
+  const scheduleGolden = useRef(null);
   const squishTimer = useRef(null);
   const seenAchievements = useRef({ ...initial.state.unlocked });
-  boostRef.current = boost;
 
   // Settle elapsed production before any action or save. The ref is committed
   // immediately so pagehide also includes actions React has not rendered yet.
@@ -308,9 +318,10 @@ function OnigiriClicker() {
 
   const skin = SKINS.find(s => s.id === activeSkin) || SKINS[0];
   const baseCps = Game.production(game);
-  const remaining = boost ? Math.max(0, Math.ceil((boost.until - clock) / 1000)) : 0;
-  const cps = baseCps * (remaining > 0 && boost.kind === "production" ? 7 : 1);
-  const clickPower = Game.clickPower(game) * (remaining > 0 ? (boost.kind === "click" ? 77 : 7) : 1);
+  const activeBoosts = Object.entries(Game.GOLDEN_EFFECTS).filter(([kind]) => boosts[kind] > clock);
+  const productionBoost = Game.boostMultiplier(boosts, "production", clock);
+  const cps = baseCps * productionBoost;
+  const clickPower = Game.clickPower(game, productionBoost) * Game.boostMultiplier(boosts, "click", clock);
   const chapter = Game.chapterFor(totalRice);
   const availableUpgrades = UPGRADES.filter(u => Game.upgradeAvailable(game, u)).sort((a, b) => a.cost - b.cost);
   const affordableUpgrades = availableUpgrades.filter(u => rice >= u.cost).length;
@@ -324,6 +335,7 @@ function OnigiriClicker() {
   const goalCost = firstUnowned ? Game.buildingPrice(game, firstUnowned, quantity) : 0;
   const featuredUpgrade = availableUpgrades[0];
   const nextFinger = UPGRADES.find(u => u.kind === "finger" && clicks < u.clickNeed && !upgrades[u.id]);
+  const nextGoldenUpgrade = UPGRADES.find(u => u.kind === "golden" && game.goldenClicks < u.goldenNeed && !upgrades[u.id]);
 
   const pushToast = useCallback(msg => {
     const id = pid.current++;
@@ -379,15 +391,21 @@ function OnigiriClicker() {
   useEffect(() => {
     let timer;
     const schedule = () => {
-      const speedup = gameRef.current.activeSkin === "sekihan" ? 0.75 : 1;
+      clearTimeout(timer);
+      const settings = Game.goldenSettings(gameRef.current);
       timer = setTimeout(() => {
+        goldenAvailable.current = true;
         setGolden({ x: 8 + Math.random() * 65, y: 8 + Math.random() * 48 });
-        goldTimer.current = setTimeout(() => setGolden(null), 15000);
-        schedule();
-      }, (25000 + Math.random() * 20000) * speedup);
+        goldTimer.current = setTimeout(() => {
+          goldenAvailable.current = false;
+          setGolden(null);
+          schedule();
+        }, Game.goldenSettings(gameRef.current).lifetime * 1000);
+      }, (25000 + Math.random() * 20000) * settings.wait);
     };
+    scheduleGolden.current = schedule;
     schedule();
-    return () => { clearTimeout(timer); clearTimeout(goldTimer.current); };
+    return () => { clearTimeout(timer); clearTimeout(goldTimer.current); scheduleGolden.current = null; };
   }, []);
 
   useEffect(() => {
@@ -396,11 +414,10 @@ function OnigiriClicker() {
   }, []);
 
   const handleClick = e => {
-    const effect = boostRef.current;
-    const multiplier = effect && effect.until > Date.now() ? (effect.kind === "click" ? 77 : 7) : 1;
+    const now = Date.now();
     let gain;
     setGame(s => {
-      gain = Game.clickPower(s) * multiplier;
+      gain = Game.clickPower(s, Game.boostMultiplier(boostRef.current, "production", now)) * Game.boostMultiplier(boostRef.current, "click", now);
       return { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, clicks: s.clicks + 1 };
     });
     setSquish(true);
@@ -414,7 +431,8 @@ function OnigiriClicker() {
     setTimeout(() => setParticles(p => p.filter(q => q.id !== id)), 800);
   };
   const clickGolden = () => {
-    if (!golden) return;
+    if (!goldenAvailable.current) return;
+    goldenAvailable.current = false;
     setGolden(null);
     clearTimeout(goldTimer.current);
     const roll = Math.random();
@@ -426,12 +444,16 @@ function OnigiriClicker() {
       });
       pushToast(`豊作！ ${fmt(bonus)} 粒、どこからともなく届いた。`);
     } else {
-      setGame(s => ({ ...s, goldenClicks: s.goldenClicks + 1 }));
-      const kind = roll < 0.8 ? "production" : "click";
-      boostRef.current = { kind, until: Date.now() + (kind === "production" ? 30000 : 12000) };
-      setBoost(boostRef.current);
-      pushToast(kind === "production" ? "炊飯祭り！ 30秒間、生産とクリックが7倍！" : "神の手！ 12秒間、クリックが77倍！");
+      const snapshot = setGame(s => ({ ...s, goldenClicks: s.goldenClicks + 1 }));
+      const kind = roll < 0.92 ? "production" : "click";
+      const now = Date.now();
+      boostRef.current = Game.addGoldenBoost(boostRef.current, kind, snapshot, now);
+      setBoosts(boostRef.current);
+      setClock(now);
+      const seconds = Game.GOLDEN_EFFECTS[kind].seconds * Game.goldenSettings(snapshot).duration;
+      pushToast(kind === "production" ? `炊飯祭り！ ${seconds}秒間、生産が7倍！` : `神の手！ ${seconds}秒間、クリックが777倍！`);
     }
+    scheduleGolden.current?.();
   };
   const buy = b => setGame(s => Game.buyBuilding(s, b.id, quantity));
   const buyUpgrade = u => {
@@ -450,30 +472,94 @@ function OnigiriClicker() {
       pushToast("そこも握るとは思わなかった。");
     }
   };
-  const exportSave = () => {
-    setSaveText(Game.encodeSave(setGame(s => s)));
-    setSaveMessage("書き出しました。コードをコピーして保管できます。");
+  const makeSaveCode = () => {
+    // A blocked tab may be showing a fallback new game or stale progress.
+    // Export the protected bytes instead of presenting that fallback as a backup.
+    if (blocked.current) {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) { setSaveText(raw); return raw; }
+      } catch {}
+      setSaveMessage("端末の保護中データを読み出せませんでした。今のデータは変更していません。");
+      return null;
+    }
+    const code = Game.encodeSave(setGame(s => s));
+    setSaveText(code);
+    return code;
   };
-  const importSave = () => {
+  const copySave = async () => {
+    const code = makeSaveCode();
+    if (!code) return;
     try {
-      const loaded = Game.decodeSave(saveText.trim());
+      await navigator.clipboard.writeText(code);
+      setSaveMessage(blocked.current ? "端末に残っている保護中のコードを全部コピーしました。" : "最新のセーブコードを全部コピーしました。");
+    } catch {
+      setShowSaveCode(true);
+      setSaveMessage("自動コピーができませんでした。「全選択」してコピーするか、ファイルに保存してください。");
+    }
+  };
+  const downloadSave = (code, prefix = "omusubi") => {
+    if (!code) return;
+    let url, link;
+    try {
+      url = URL.createObjectURL(new Blob([code], { type: "text/plain;charset=utf-8" }));
+      link = document.createElement("a");
+      link.href = url;
+      link.download = `${prefix}-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      setSaveMessage("セーブファイルのダウンロードを開始しました。");
+    } catch {
+      setSaveMessage("ファイルを書き出せませんでした。コードのコピーをお試しください。");
+    } finally {
+      link?.remove();
+      if (url) setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  };
+  const importSave = code => {
+    try {
+      const loaded = Game.decodeSave(code.trim());
+      // Retain one pre-import snapshot, including an unreadable protected save.
+      // Keep it in memory too, so a full/blocked storage still permits download.
+      const previous = blocked.current ? localStorage.getItem(STORAGE_KEY) : Game.encodeSave(setGame(s => s));
+      if (previous) setImportBackup(previous);
       // Imports restore exactly the encoded progress. Offline gains apply only on
       // local resume, so re-importing a code cannot mint repeated offline income.
       setGame(loaded.state);
       lastTick.current = Date.now();
       seenAchievements.current = { ...loaded.state.unlocked };
-      boostRef.current = null;
-      setBoost(null); setGolden(null); clearTimeout(goldTimer.current);
+      boostRef.current = {};
+      goldenAvailable.current = false;
+      setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
+      scheduleGolden.current?.();
       setParticles([]); setNotice("");
       blocked.current = false;
       setStorageError("");
       try {
+        if (previous) localStorage.setItem(IMPORT_BACKUP_KEY, previous);
         localStorage.setItem(STORAGE_KEY, Game.encodeSave({ ...loaded.state, savedAt: Date.now() }));
         setLastSaved(Date.now());
       } catch { setStorageError("端末に保存できません。元のセーブコードを保管してください。"); }
       setSaveMessage(loaded.refund > 0 ? `復元しました。旧工房の在庫・契約農家を ${fmt(loaded.refund)} 粒に戻しました。` : "セーブデータを復元しました。おかえり！");
+      setSaveText(code.trim());
     } catch {
       setSaveMessage("読み込めませんでした。コードを確認してください。今の進行はそのままです。");
+    }
+  };
+  const importFile = async e => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || readingFileRef.current) return;
+    readingFileRef.current = true;
+    setReadingFile(true);
+    try {
+      if (file.size > 1000000) throw Error("size");
+      importSave(await file.text());
+    } catch {
+      setSaveMessage("ファイルを読めませんでした。1MB以下のセーブ用テキストを選んでください。今の進行はそのままです。");
+    } finally {
+      readingFileRef.current = false;
+      setReadingFile(false);
     }
   };
 
@@ -489,14 +575,14 @@ function OnigiriClicker() {
             <div className="rice-count">{fmt(rice)} <span>米粒</span></div>
             <div className="cps">毎秒 <b>{fmtCps(cps)}</b> 粒 <span>／</span> 1クリック <b>{fmtCps(clickPower).replace(/\.0$/, "")}</b> 粒</div>
           </div>
-          <div className={`left ${remaining > 0 ? "boosting" : ""}`}>
+          <div className={`left ${activeBoosts.length ? "boosting" : ""} ${activeBoosts.length === 2 ? "combo" : ""}`}>
             <div className="rice-orbit" aria-hidden="true" />
             <button className={`onigiri-btn ${squish ? "squish" : ""}`} onClick={handleClick} aria-label="おむすびを握る"><OnigiriSVG skin={skin} /></button>
             {particles.map(p => <span key={p.id} className="particle" style={{ left: p.x, top: p.y }}>{p.text}</span>)}
             {golden && <button className="golden" style={{ left: `${golden.x}%`, top: `${golden.y}%` }} onClick={clickGolden} aria-label="金のおむすびをつかまえる">🍙<span>金！</span></button>}
           </div>
           <div className="play-caption">
-            {remaining > 0 ? <span className="boost-label">{boost.kind === "production" ? "炊飯祭り ×7" : "神の手 クリック×77"} · あと{remaining}秒</span> : firstUnowned ? <span className={rice >= goalCost ? "goal-ready" : ""}>{firstUnowned.name}{quantity > 1 ? ` ${quantity}${firstUnowned.unit}` : ""} {rice >= goalCost ? "を迎えられます！" : `まで、あと ${fmt(Math.ceil(goalCost - rice))} 粒`}</span> : nextFinger ? `あと ${fmt(nextFinger.clickNeed - clicks)} 回握ると、新しい指の強化が解放` : `${skin.name} · ${skin.ability}`}
+            {activeBoosts.length > 0 ? <span className="boost-label">{activeBoosts.map(([kind, effect]) => <span key={kind}>{kind === "production" ? "生産" : "クリック"} ×{effect.multiplier} · {Math.ceil((boosts[kind] - clock) / 1000)}秒</span>)}</span> : firstUnowned ? <span className={rice >= goalCost ? "goal-ready" : ""}>{firstUnowned.name}{quantity > 1 ? ` ${quantity}${firstUnowned.unit}` : ""} {rice >= goalCost ? "を迎えられます！" : `まで、あと ${fmt(Math.ceil(goalCost - rice))} 粒`}</span> : nextFinger ? `あと ${fmt(nextFinger.clickNeed - clicks)} 回握ると、新しい指の強化が解放` : `${skin.name} · ${skin.ability}`}
           </div>
           <button className="news" aria-label="米ニュースをめくる" onClick={() => { setNewsIndex(n => n + 1); setGame(s => ({ ...s, newsClicks: s.newsClicks + 1 })); }}>
             <span className="news-label">米ニュース <span aria-hidden="true">↻</span></span>
@@ -536,6 +622,7 @@ function OnigiriClicker() {
             </> : <>
               <p className="panel-help">具材でクリック強化。施設を増やすと、その施設の強化も解放。</p>
               {nextFinger && <p className="finger-goal">あと{fmt(nextFinger.clickNeed - clicks)}回握ると「{nextFinger.name}」が解放</p>}
+              {nextGoldenUpgrade && <p className="finger-goal">金のおむすび あと{nextGoldenUpgrade.goldenNeed - game.goldenClicks}回で「{nextGoldenUpgrade.name}」が解放</p>}
               {availableUpgrades.length === 0 && <div className="empty-state">まずは米粒を集めよう。累計20粒で最初の強化が見つかるよ。</div>}
               {availableUpgrades.map(u => <button key={u.id} className={`shop-item upgrade-item ${rice >= u.cost ? "affordable" : ""}`} disabled={rice < u.cost} onClick={() => buyUpgrade(u)}>
                 <span className="shop-icon" aria-hidden="true">{u.icon}</span><span className="shop-body"><span className="shop-name">{u.name}</span><span className="production">{u.desc}</span><span className="shop-desc">{u.flavor}</span></span><span className="shop-cost">{fmt(u.cost)} 粒</span>
@@ -563,12 +650,20 @@ function OnigiriClicker() {
           </>}
           {tab === "save" && <>
             <div className="save-status"><b>{storageError ? "自動保存を確認してください" : "この端末に自動保存"}</b><span>{lastSaved ? `最終保存 ${new Date(lastSaved).toLocaleTimeString('ja-JP')}` : "5秒ごと・画面を閉じるときに保存"}</span></div>
-            <p className="panel-help">閉じている間も最大4時間、生産が進みます。別の端末へ移るときはコードを書き出してください。</p>
-            <label htmlFor="save-code" className="section-label">セーブコード</label>
-            <textarea id="save-code" className="save-area" value={saveText} onChange={e => setSaveText(e.target.value)} placeholder="書き出すか、保存してあるコードを貼り付ける" spellCheck="false" />
-            <div className="craft-row"><button className="craft-btn" onClick={exportSave}>書き出す</button><button className="craft-btn" disabled={!saveText.trim()} onClick={importSave}>読み込む</button></div>
+            <p className="panel-help">閉じている間も最大4時間、生産が進みます。バックアップ・別端末への引き継ぎはこちら。</p>
+            <div className="craft-row"><button className="craft-btn" onClick={copySave}>{blocked.current ? "保護中コードをコピー" : "最新コードをコピー"}</button><button className="craft-btn" onClick={() => downloadSave(makeSaveCode())}>ファイルに保存</button></div>
+            <button className="craft-btn file-load" disabled={readingFile} onClick={() => fileInputRef.current?.click()}>{readingFile ? "読み込み中…" : "ファイルを読み込む"}</button>
+            <input ref={fileInputRef} type="file" accept=".txt,text/plain" aria-label="セーブファイル" hidden onChange={importFile} />
             <p className="save-message" role="status">{saveMessage}</p>
-            <details className="save-help"><summary>遊び方・旧セーブについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびを見つけたらタップ！</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。</p><p>読み込みは現在の進行を置き換えます。先に「書き出す」で今のコードを保管できます。自動保存はこのブラウザ・このサイト専用です。</p></details>
+            <p className="panel-help">読み込みは今の進行を置き換えます。残したい進行は先に保存してください。</p>
+            <details className="save-help" open={showSaveCode} onToggle={e => setShowSaveCode(e.currentTarget.open)}><summary>コードで読み込む・手動コピー</summary>
+              <label htmlFor="save-code" className="section-label">セーブコード</label>
+              <textarea ref={saveCodeRef} id="save-code" className="save-area" value={saveText} onChange={e => setSaveText(e.target.value)} placeholder="保存してあるコードを貼り付ける" spellCheck="false" />
+              <div className="craft-row"><button className="craft-btn" onClick={() => { if (makeSaveCode()) setSaveMessage(blocked.current ? "保護中のコードを表示しました。" : "最新のコードを表示しました。"); }}>{blocked.current ? "保護中コードを表示" : "最新コードを表示"}</button><button className="craft-btn" disabled={!saveText} onClick={() => { saveCodeRef.current?.focus(); saveCodeRef.current?.select(); saveCodeRef.current?.setSelectionRange(0, saveText.length); }}>全選択</button></div>
+              <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
+              {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
+            </details>
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>生産7倍とクリック777倍は同時に発動します。「指」の強化があると、生産7倍がクリックにも乗ります。同じ効果を取ると残り時間が更新されます。金のおむすびを7・27・77回つかまえると、金専用の強化がショップに解放されます。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>
         </section>

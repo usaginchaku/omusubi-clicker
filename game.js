@@ -149,6 +149,12 @@ for (const [i, clicks, cost, percent, name, flavor] of [
 // added afterwards. Describe that distinction instead of promising twice the total.
 UPGRADES.filter(u => u.kind === "click").forEach(u => { u.desc = u.desc.replace("クリック力", "基本のクリック力"); });
 
+UPGRADES.push(
+  { id: "lucky_cat", kind: "golden", name: "招きむすび", cost: 7777, goldenNeed: 7, wait: 0.8, lifetime: 2, icon: "🍙", desc: "金の待ち時間 −20%・出現時間 ×2", flavor: "右手は米を、左手も米を招く。" },
+  { id: "lucky_thermos", kind: "golden", name: "神様の保温ジャー", cost: 777777, goldenNeed: 27, duration: 2, icon: "🍚", desc: "炊飯祭りと神の手の効果時間 ×2", flavor: "ご利益は、温かいうちに。" },
+  { id: "lucky_schedule", kind: "golden", name: "七福神のシフト表", cost: 77777777, goldenNeed: 77, wait: 0.8, lifetime: 2, icon: "⛩️", desc: "金の待ち時間をさらに −20%・出現時間 ×2", flavor: "全員、まかない目当てで出勤。" },
+);
+
 const BUILDING_UPGRADE_FLAVORS = {
   obaachan: ["券に有効期限を書かない優しさ。", "議題：ちゃんと食べてる？", "レシピの単位が全部『このくらい』。", "分家という概念を認めない。"],
   suihanki: ["ボタンを一つ増やしただけでこのふっくら。", "昨日のごはんが今日より炊きたて。", "釜が本気なら、こちらも本気で食べる。", "『炊きたい』と初めて自分から言った。"],
@@ -251,10 +257,27 @@ function buildingMultiplier(s, id) {
 function production(s) {
   return BUILDINGS.reduce((sum, b) => sum + b.cps * (s.owned[b.id] || 0) * buildingMultiplier(s, b.id), 0) * skinCps(s.activeSkin);
 }
-function clickPower(s) {
+function clickPower(s, productionBoost = 1) {
   const multiplier = UPGRADES.filter(u => u.kind === "click" && s.upgrades[u.id]).reduce((p, u) => p * u.mult, 1);
   const share = UPGRADES.filter(u => u.kind === "finger" && s.upgrades[u.id]).reduce((p, u) => p + u.share, 0);
-  return (multiplier + production(s) * share) * skinClick(s.activeSkin);
+  return (multiplier + production(s) * productionBoost * share) * skinClick(s.activeSkin);
+}
+const GOLDEN_EFFECTS = {
+  production: { multiplier: 7, seconds: 30 },
+  click: { multiplier: 777, seconds: 13 },
+};
+function goldenSettings(s) {
+  return UPGRADES.filter(u => u.kind === "golden" && s.upgrades[u.id]).reduce((settings, u) => ({
+    wait: settings.wait * (u.wait || 1), lifetime: settings.lifetime * (u.lifetime || 1), duration: settings.duration * (u.duration || 1),
+  }), { wait: s.activeSkin === "sekihan" ? 0.75 : 1, lifetime: 15, duration: 1 });
+}
+function boostMultiplier(boosts, kind, now) {
+  return boosts[kind] > now ? GOLDEN_EFFECTS[kind].multiplier : 1;
+}
+function addGoldenBoost(boosts, kind, s, now) {
+  // Refresh this effect only. A second effect can overlap; repeated identical
+  // effects never multiply themselves or accumulate unbounded durations.
+  return { ...boosts, [kind]: now + GOLDEN_EFFECTS[kind].seconds * goldenSettings(s).duration * 1000 };
 }
 // A small windfall rewards saving without letting one early lucky click buy
 // several tiers of facilities. Temporary multipliers never inflate this payout.
@@ -268,6 +291,7 @@ function upgradeAvailable(s, u) {
   if (s.upgrades[u.id]) return false;
   if (u.kind === "building") return (s.owned[u.building] || 0) >= u.need;
   if (u.kind === "finger") return s.clicks >= u.clickNeed;
+  if (u.kind === "golden") return s.goldenClicks >= u.goldenNeed;
   return s.totalRice >= u.cost * 0.4;
 }
 const PURCHASE_QUANTITIES = [1, 10, 100, 1000];
@@ -299,10 +323,10 @@ function awardAchievements(s) {
   return earned.length ? { ...s, unlocked: { ...s.unlocked, ...Object.fromEntries(earned.map(a => [a.id, true])) } } : s;
 }
 
-function advanceProduction(s, since, now, boost = null) {
+function advanceProduction(s, since, now, boosts = {}) {
   const seconds = Math.min(4 * 3600, Math.max(0, (now - since) / 1000));
-  const boosted = boost?.kind === "production" ? Math.min(seconds, Math.max(0, (boost.until - since) / 1000)) : 0;
-  const gain = production(s) * (seconds + boosted * 6);
+  const boosted = Math.min(seconds, Math.max(0, ((boosts.production || 0) - since) / 1000));
+  const gain = production(s) * (seconds + boosted * (GOLDEN_EFFECTS.production.multiplier - 1));
   return { ...s, rice: s.rice + gain, totalRice: s.totalRice + gain, savedAt: now };
 }
 
@@ -371,7 +395,7 @@ function offlineProgress(s, now) {
 }
 
 return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame,
-  production, clickPower, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
+  production, clickPower, GOLDEN_EFFECTS, goldenSettings, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();
 if (typeof module !== "undefined") module.exports = Game;

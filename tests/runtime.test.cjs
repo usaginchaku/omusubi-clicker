@@ -26,7 +26,7 @@ function loadCompiledApp() {
 
 // Exercise the real event handlers and effects while controlling suspension.
 // State setters queue work until flush(), so pagehide can occur before a render.
-function createRuntime(code, initialState, random = Math.random) {
+function createRuntime(code, initialState, random = Math.random, options = {}) {
   let now = initialState.savedAt;
   let hookIndex = 0;
   let component;
@@ -38,7 +38,10 @@ function createRuntime(code, initialState, random = Math.random) {
   const intervals = new Map();
   const timeouts = new Map();
   const listeners = new Map();
-  const storage = new Map([[storageKey, Game.encodeSave(initialState)]]);
+  const storage = new Map([[storageKey, options.storedCode ?? Game.encodeSave(initialState)]]);
+  const clipboard = [];
+  const downloads = [];
+  const objectUrls = new Map();
   const sameDeps = (a, b) => a && b && a.length === b.length && a.every((value, i) => Object.is(value, b[i]));
   const eventTarget = {
     addEventListener(name, callback) {
@@ -49,9 +52,15 @@ function createRuntime(code, initialState, random = Math.random) {
   };
   const context = vm.createContext({
     Math: Object.create(Math, { random: { value: random } }),
-    Date: class extends Date { static now() { return now; } },
+    Date: class extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } },
     btoa,
     atob,
+    Blob,
+    navigator: { clipboard: { async writeText(text) { if (options.clipboardDenied) throw Error('denied'); clipboard.push(text); } } },
+    URL: {
+      createObjectURL(blob) { const url=`blob:test-${objectUrls.size}`; objectUrls.set(url,blob); return url; },
+      revokeObjectURL: url => objectUrls.delete(url),
+    },
     React: {
       createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
       useState(initial) {
@@ -82,7 +91,10 @@ function createRuntime(code, initialState, random = Math.random) {
       },
     },
     ReactDOM: { createRoot: () => ({ render(element) { component = element.type; render(); } }) },
-    document: { ...eventTarget, getElementById: () => ({}), visibilityState: 'visible' },
+    document: { ...eventTarget, getElementById: () => ({}), visibilityState: 'visible',
+      body: { appendChild() {} },
+      createElement: () => ({ click() { if (options.downloadFailed) throw Error('download'); downloads.push({name:this.download,blob:objectUrls.get(this.href)}); }, remove() {} }),
+    },
     window: eventTarget,
     localStorage: {
       getItem: key => storage.get(key) ?? null,
@@ -116,6 +128,7 @@ function createRuntime(code, initialState, random = Math.random) {
     if (Array.isArray(node)) return node.map(child => find(child, predicate)).find(Boolean);
     return predicate(node) ? node : find(node.children, predicate);
   }
+  const text = node => node == null ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
   vm.runInContext(fs.readFileSync(path.join(root, 'game.js'), 'utf8'), context);
   vm.runInContext(code, context);
   flush();
@@ -134,6 +147,25 @@ function createRuntime(code, initialState, random = Math.random) {
       flush();
     },
     flush,
+    async press(label) {
+      const button=find(tree,node=>node.type==='button' && text(node)===label);
+      assert.ok(button, `button ${label} is rendered`);
+      assert.ok(!button.props.disabled, `button ${label} is enabled`);
+      await button.props.onClick();
+      flush();
+    },
+    async importFile(file) {
+      const input=find(tree,node=>node.type==='input' && node.props.type==='file');
+      const target={files:[file],value:'selected.txt'};
+      await input.props.onChange({target});
+      flush();
+      assert.equal(target.value,'', 'same file can be chosen again');
+    },
+    clipboard, downloads,
+    importBackup: () => storage.get(storageKey+'-before-import'),
+    saveMessage: () => text(find(tree,node=>node.props.className==='save-message')),
+    saveCode: () => find(tree,node=>node.props.id==='save-code')?.props.value,
+    manualCodeOpen: () => find(tree,node=>node.type==='details' && text(node).includes('コードで読み込む'))?.props.open,
     chooseQuantity(quantity) {
       const button = find(tree, node => node.type === 'button' && node.props['aria-label'] === `${quantity}個ずつ購入`);
       assert.ok(button);
@@ -141,7 +173,7 @@ function createRuntime(code, initialState, random = Math.random) {
       flush();
     },
     spawnGolden() {
-      const timer = [...timeouts.values()].find(timer => timer.delay >= 25000 && timer.delay <= 45000);
+      const timer = [...timeouts.values()].find(timer => timer.delay >= 12000 && timer.delay <= 45000);
       assert.ok(timer, 'a natural golden spawn is scheduled');
       timer.callback();
       flush();
@@ -153,7 +185,6 @@ function createRuntime(code, initialState, random = Math.random) {
     },
     caption() {
       const caption = find(tree, node => node.props?.className === 'play-caption');
-      const text = node => node == null ? '' : Array.isArray(node) ? node.map(text).join('') : typeof node === 'object' ? text(node.children) : String(node);
       return text(caption);
     },
     saved: () => Game.decodeSave(storage.get(storageKey)).state,
@@ -162,6 +193,112 @@ function createRuntime(code, initialState, random = Math.random) {
 }
 
 const startingGame = () => ({ ...Game.newGame(), rice: 100, totalRice: 100, owned: { obaachan: 1 }, savedAt: 1000 });
+
+test('golden effects coexist, a fast double tap claims once, and pagehide saves the immediate frenzy click', async () => {
+  let roll=.6;
+  const runtime=createRuntime(await loadCompiledApp(),{...startingGame(),upgrades:{finger_0:true}},()=>roll);
+  runtime.spawnGolden();
+  runtime.claimGolden();
+  runtime.claimGolden();
+  runtime.flush();
+  runtime.advance(26000);
+  roll=.96;
+  runtime.spawnGolden();
+  runtime.claimGolden();
+  runtime.clickOnigiri(); // before React renders the new effect
+  runtime.pagehide();
+  assert.equal(runtime.saved().goldenClicks,2);
+  assert.equal(runtime.saved().rice,100 + .5*26*7 + (1+.5*7*.02)*777);
+  runtime.flush();
+  assert.match(runtime.caption(),/生産 ×7.*クリック ×777/);
+  runtime.advance(60000);
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,100 + .5*(30*7+56) + 1.07*777);
+  runtime.tick();
+  assert.doesNotMatch(runtime.caption(),/×777/);
+});
+
+test('copy exports current progress including unrendered clicks; failure reveals manual copying', async () => {
+  for (const clipboardDenied of [false,true]) {
+    const runtime=createRuntime(await loadCompiledApp(),startingGame(),Math.random,{clipboardDenied});
+    await runtime.press('セーブ');
+    runtime.advance(10000);
+    runtime.clickOnigiri();
+    await runtime.press('最新コードをコピー');
+    assert.equal(Game.decodeSave(runtime.saveCode()).state.rice,106);
+    if (clipboardDenied) {
+      assert.equal(runtime.clipboard.length,0);
+      assert.match(runtime.saveMessage(),/自動コピーができません/);
+      assert.equal(runtime.manualCodeOpen(),true);
+    } else {
+      assert.equal(runtime.clipboard[0],runtime.saveCode());
+      assert.match(runtime.saveMessage(),/全部コピーしました/);
+    }
+  }
+});
+
+test('txt download round-trips through the real file import handler without extra offline income', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame());
+  await runtime.press('セーブ');
+  runtime.advance(10000);
+  runtime.clickOnigiri();
+  await runtime.press('ファイルに保存');
+  assert.equal(runtime.downloads.length,1);
+  const file=runtime.downloads[0];
+  assert.match(file.name,/^omusubi-.*\.txt$/);
+  const code=await file.blob.text();
+  assert.equal(Game.decodeSave(code).state.rice,106);
+  runtime.advance(3600000);
+  await runtime.importFile(new Blob(['\ufeff'+code+'\n']));
+  assert.equal(Game.decodeSave(runtime.importBackup()).state.rice,1906, 'pre-import progress includes the elapsed hour');
+  assert.equal(runtime.saved().rice,106);
+  assert.equal(runtime.saved().clicks,1);
+  assert.match(runtime.saveMessage(),/復元しました/);
+  runtime.pagehide();
+  assert.equal(runtime.saved().rice,106);
+  await runtime.importFile(file.blob);
+  assert.equal(runtime.saved().rice,106);
+});
+
+test('blocked corrupted saves export their original bytes and keep them as the pre-import backup', async () => {
+  const original='OMSB1|broken-base64';
+  const runtime=createRuntime(await loadCompiledApp(),startingGame(),Math.random,{storedCode:original});
+  await runtime.press('セーブ');
+  await runtime.press('保護中コードをコピー');
+  assert.equal(runtime.clipboard[0],original);
+  await runtime.press('ファイルに保存');
+  assert.equal(await runtime.downloads[0].blob.text(),original);
+  await runtime.importFile(new Blob([Game.encodeSave(startingGame())]));
+  assert.equal(runtime.importBackup(),original);
+  await runtime.press('読み込み前のデータを保存');
+  assert.equal(await runtime.downloads[1].blob.text(),original);
+  assert.equal(runtime.saved().rice,100);
+});
+
+test('malformed, oversized and unreadable files preserve progress and report errors', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame());
+  await runtime.press('セーブ');
+  for (const file of [new Blob(['not a save']),{size:1000001,text(){throw Error('must not read oversized file');}},{size:1,async text(){throw Error('unreadable');}}]) {
+    await runtime.importFile(file);
+    assert.match(runtime.saveMessage(),/今の進行はそのまま/);
+    assert.equal(runtime.saved().rice,100);
+    runtime.pagehide();
+    assert.equal(runtime.saved().rice,100);
+  }
+});
+
+test('import clears temporary effects and cancelled file selection does nothing', async () => {
+  const runtime=createRuntime(await loadCompiledApp(),startingGame(),()=>.96);
+  runtime.spawnGolden(); runtime.claimGolden(); runtime.flush();
+  assert.match(runtime.caption(),/クリック ×777/);
+  await runtime.press('セーブ');
+  await runtime.importFile(undefined);
+  assert.match(runtime.caption(),/クリック ×777/);
+  await runtime.importFile(new Blob([Game.encodeSave(startingGame())]));
+  assert.doesNotMatch(runtime.caption(),/×777/);
+  runtime.clickOnigiri(); runtime.pagehide();
+  assert.equal(runtime.saved().rice,101);
+});
 
 test('next purchase hint follows the selected bulk quantity and never promises an unaffordable buy', async () => {
   const runtime=createRuntime(await loadCompiledApp(), {...Game.newGame(),rice:15,totalRice:15,savedAt:1000});
