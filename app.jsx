@@ -288,6 +288,9 @@ function fmt(n) {
   return (neg ? "-" : "") + out;
 }
 
+// 倍率:小数点第2位まで、大きければ万・億で
+const fmtTimes = m => m < 1e4 ? m.toLocaleString("ja-JP", { maximumFractionDigits: 2 }) : fmt(m);
+
 // 生産量:小数点第1位まで
 function fmtCps(n) {
   if (n >= 1e4) return fmt(n);
@@ -365,6 +368,11 @@ function OnigiriSVG({ skin }) {
         <ellipse cx="80" cy="90" rx="13" ry="15" transform="rotate(25 80 90)" />
         <ellipse cx="120" cy="90" rx="13" ry="15" transform="rotate(-25 120 90)" />
       </g>}
+      {skin.extra === "shinmai" && <g>
+        <path d="M84 18q-7-7 0-14m16 12q-7-7 0-14m16 16q-7-7 0-14" stroke="#ffffff" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.8" />
+        {[[66, 70], [134, 66], [100, 52], [58, 112], [146, 112]].map(([x, y], i) => <ellipse key={i} cx={x} cy={y} rx="4" ry="2" fill="#ffffff" transform={`rotate(${i * 35 - 30} ${x} ${y})`} />)}
+        <path d="M100 168q-2-14 6-22m-6 22q-8-10-18-10" stroke="#7fae6a" strokeWidth="3" fill="none" strokeLinecap="round" />
+      </g>}
       {skin.extra === "neko" && <g stroke="#c99054" strokeWidth="3" fill="#ffe6ba">
         <path d="M52 67 L48 28 L84 43 Z M116 43 L152 28 L148 67 Z" />
         <path d="M47 96 L65 100 M48 108 L65 106 M135 100 L153 96 M135 106 L152 108" stroke="#805c3c" />
@@ -393,6 +401,7 @@ function OnigiriSVG({ skin }) {
 
 const STORAGE_KEY = "omusubi-clicker-save-v2";
 const IMPORT_BACKUP_KEY = `${STORAGE_KEY}-before-import`;
+const REBIRTH_BACKUP_KEY = `${STORAGE_KEY}-before-rebirth`;
 const WIDE_QUERY = "(min-width: 760px)";
 function loadInitialGame() {
   try {
@@ -439,6 +448,12 @@ function OnigiriClicker() {
   const [importBackup, setImportBackup] = useState(() => {
     try { return localStorage.getItem(IMPORT_BACKUP_KEY) || ""; } catch { return ""; }
   });
+  const [rebirthBackup, setRebirthBackup] = useState(() => {
+    try { return localStorage.getItem(REBIRTH_BACKUP_KEY) || ""; } catch { return ""; }
+  });
+  const [rebirthConfirm, setRebirthConfirm] = useState(false);
+  const [rebirthMessage, setRebirthMessage] = useState("");
+  const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [storageError, setStorageError] = useState(initial.error);
   const [lastSaved, setLastSaved] = useState(0);
   const gameRef = useRef(game);
@@ -457,6 +472,7 @@ function OnigiriClicker() {
   const scheduleGolden = useRef(null);
   const squishTimer = useRef(null);
   const seenAchievements = useRef({ ...initial.state.unlocked });
+  const rebirthHinted = useRef(Game.canRebirth(initial.state));
 
   // Settle elapsed production before any action or save. The ref is committed
   // immediately so pagehide also includes actions React has not rendered yet.
@@ -509,6 +525,15 @@ function OnigiriClicker() {
   const nextPlate = PLATES.find(p => p.need > cardCount);
   const outing = OUTINGS.find(o => o.id === selectedOuting);
   const postcardRecipe = postcard && RECIPES.find(r => r.id === postcard);
+  const year = (game.rebirths || 0) + 1;
+  const seeds = Game.seedCount(game);
+  const seedGain = Game.rebirthGain(game);
+  const rebirthReady = Game.canRebirth(game);
+  const firstRebirthReady = rebirthReady && !game.rebirths;
+  // The preview runs the real reset, so the confirmation lists what will happen.
+  const rebirthPreview = rebirthReady ? Game.rebirth(game, clock).state : null;
+  const allTime = Game.allTimeRice(game);
+  const nextSeedRice = Game.riceForSeeds(Game.seedsFor(allTime) + 1) - allTime;
 
   function openOutings() {
     setOutingView(true); setSelectedOuting(null); setPostcard(null);
@@ -576,6 +601,12 @@ function OnigiriClicker() {
     seenAchievements.current = { ...unlocked };
     if (fresh.length) pushToast(`実績「${fresh[0].name}」${fresh.length > 1 ? ` ほか${fresh.length - 1}件` : ""}`);
   }, [unlocked, pushToast]);
+
+  useEffect(() => {
+    // Announce the very first chance once; the details stay in the collection.
+    if (firstRebirthReady && !rebirthHinted.current) pushToast("今年1兆粒！ 図鑑の実績から「新米」を開けます");
+    rebirthHinted.current = rebirthReady;
+  }, [firstRebirthReady, rebirthReady, pushToast]);
 
   useEffect(() => {
     const save = () => {
@@ -751,6 +782,48 @@ function OnigiriClicker() {
       if (url) setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
   };
+  // Temporary effects and open scenes never survive an import or a rebirth.
+  const clearTransient = () => {
+    boostRef.current = {};
+    frenzyRun.current = null;
+    goldenAvailable.current = false;
+    setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
+    scheduleGolden.current?.();
+    setParticles([]); setNotice(""); setKitchen(null); setLastGain(null);
+    setOutingView(false); setSelectedOuting(null); setPostcard(null);
+    setRebirthConfirm(false); setRestoreConfirm(false);
+  };
+  const startNewYear = () => {
+    // A blocked tab may show stale or fallback progress; never reset from it.
+    if (blocked.current) {
+      setRebirthMessage("この端末の自動保存が停止中のため、新米にしませんでした。今の進行はそのままです。");
+      return;
+    }
+    const snapshot = setGame(s => s);
+    const { state: next, gain } = Game.rebirth(snapshot, Date.now());
+    // A second tap before React renders sees the already-reset year and stops.
+    if (!gain) { setRebirthConfirm(false); return; }
+    const backup = Game.encodeSave(snapshot);
+    try {
+      localStorage.setItem(REBIRTH_BACKUP_KEY, backup);
+      if (localStorage.getItem(REBIRTH_BACKUP_KEY) !== backup) throw Error("backup");
+      localStorage.setItem(STORAGE_KEY, Game.encodeSave(next));
+    } catch {
+      // Without a stored way back the reset is not performed at all.
+      setRebirthConfirm(false);
+      setRebirthMessage("新米前のデータの控えをこの端末に保存できなかったため、新米にしませんでした。今の進行はそのままです。セーブ画面の「ファイルに保存」で控えを残し、端末の空き容量を確認してください。");
+      return;
+    }
+    setRebirthBackup(backup);
+    setGame(next);
+    lastTick.current = Date.now();
+    rebirthHinted.current = false;
+    clearTransient();
+    setLastSaved(next.savedAt);
+    setStorageError("");
+    setRebirthMessage(`${next.rebirths + 1}年目が始まりました。種もみ +${fmt(gain)}粒。新米前のデータはセーブ画面から戻せます。`);
+    pushToast(`新米の季節！ 種もみ +${fmt(gain)}粒`);
+  };
   const importSave = code => {
     try {
       const loaded = Game.decodeSave(code.trim());
@@ -763,13 +836,9 @@ function OnigiriClicker() {
       setGame(loaded.state);
       lastTick.current = Date.now();
       seenAchievements.current = { ...loaded.state.unlocked };
-      boostRef.current = {};
-      frenzyRun.current = null;
-      goldenAvailable.current = false;
-      setBoosts({}); setGolden(null); clearTimeout(goldTimer.current);
-      scheduleGolden.current?.();
-      setParticles([]); setNotice(""); setKitchen(null); setLastGain(null);
-      setOutingView(false); setSelectedOuting(null); setPostcard(null);
+      rebirthHinted.current = Game.canRebirth(loaded.state);
+      clearTransient();
+      setRebirthMessage("");
       blocked.current = false;
       setStorageError("");
       try {
@@ -804,7 +873,7 @@ function OnigiriClicker() {
     <div className={`root view-${view}`} style={{ "--rice-a": skin.riceA, "--rice-b": skin.riceB }}>
       <header className="header">
         <h1 className="title"><button className="title-emoji" aria-label="ひみつのおむすび" onClick={pokeTitle}>🍙</button> おむすびくりっかー</h1>
-        <div className="chapter">{chapter.name}</div>
+        <div className="chapter">{game.rebirths ? `${year}年目 · ` : ""}{chapter.name}</div>
       </header>
       <main className="main">
         <section className="play-side" aria-label="おむすびを握る場所">
@@ -833,7 +902,7 @@ function OnigiriClicker() {
         <section className="right" aria-label="おむすび帝国">
           <nav className="tabbar" aria-label="ゲームメニュー">
             {[['play','握る'],['shop','ショップ'],['collection','図鑑'],['save','セーブ']].filter(([id]) => !wide || id !== "play").map(([id,label]) =>
-              <button key={id} className={`tabbtn ${view === id ? "active" : ""}`} aria-current={view === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "shop" && view !== "shop" && affordableUpgrades > 0 && <span className="new-dot" aria-label="買える強化があります" />}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
+              <button key={id} className={`tabbtn ${view === id ? "active" : ""}`} aria-current={view === id ? "page" : undefined} onClick={() => { setTab(id); setNewsOpen(false); }}>{label}{id === "shop" && view !== "shop" && affordableUpgrades > 0 && <span className="new-dot" aria-label="買える強化があります" />}{id === "collection" && (waitingRegulars.length > 0 || newRecipes.length > 0 || firstRebirthReady) && <span className="new-dot" aria-label="図鑑に新しい発見があります" />}</button>)}
           </nav>
           {view !== "play" && <div className="panel-content" key={`${view}-${shopTab}-${collectionTab}-${outingView}-${selectedOuting}-${postcard}`}>
           {view === "shop" && <>
@@ -848,13 +917,13 @@ function OnigiriClicker() {
               </button>}
               {visibleBuildings.map(b => {
                 const n = owned[b.id] || 0, cost = Game.buildingPrice(game, b, quantity);
-                const rate = b.cps * Game.buildingMultiplier(game, b.id) * Game.skinCps(activeSkin) * Game.regularMultiplier(game);
+                const rate = Game.buildingRate(game, b);
                 const milestone = Game.nextBuildingUpgrade(game, b.id);
                 return <button key={b.id} className={`shop-item building-item ${rice >= cost ? "affordable" : ""}`} disabled={rice < cost} onClick={() => buy(b)}>
                   <span className="shop-icon" aria-hidden="true">{b.icon}</span>
-                  <span className="shop-body"><span className="shop-name">{b.name}</span><span className="shop-desc">{b.desc}</span><span className="production">1{b.unit}で毎秒 {fmtCps(rate)} 粒</span></span>
-                  <span className="shop-meta"><span className="shop-cost">{fmt(cost)} 粒</span><span className="shop-owned">所持 {n}{b.unit}</span>{quantity > 1 && <span className="shop-desc">{quantity}{b.unit}購入</span>}</span>
-                  {milestone && <span className="building-milestone"><span>{milestone.need}{b.unit}で次の強化解放</span><span className="milestone-track" aria-hidden="true"><span style={{width:`${n / milestone.need * 100}%`}} /></span></span>}
+                  <span className="shop-body"><span className="shop-name">{b.name}</span><span className="production">1{b.unit}で毎秒 {fmtCps(rate)} 粒</span></span>
+                  <span className="shop-meta"><span className="shop-cost">{fmt(cost)} 粒</span><span className="shop-owned">所持 {n}{b.unit}</span></span>
+                  {milestone && <span className="building-milestone"><span aria-label={`次の強化まで ${n}/${milestone.need}${b.unit}`}>{n}/{milestone.need}{b.unit}</span><span className="milestone-track" aria-hidden="true"><span style={{width:`${n / milestone.need * 100}%`}} /></span></span>}
                 </button>;
               })}
               {nextBuilding && <div className="next-building"><span>？ 次の施設</span><span>累計 {fmt(nextBuilding.baseCost * 0.25)} 粒で発見</span></div>}
@@ -864,17 +933,18 @@ function OnigiriClicker() {
               {nextPair && <details className="pair-goal"><summary>次の連携：{nextPair.name}</summary><p className="production">{nextPair.desc}</p><div className="pair-requirements">{Object.entries(nextPair.requires).map(([id, need]) => <span key={id}>{BUILDINGS.find(b => b.id === id).name} {Math.min(owned[id] || 0, need)}/{need}</span>)}</div></details>}
               {availableUpgrades.length === 0 && <div className="empty-state">まずは米粒を集めよう。累計20粒で最初の強化が見つかるよ。</div>}
               {availableUpgrades.map(u => <button key={u.id} className={`shop-item upgrade-item ${rice >= u.cost ? "affordable" : ""}`} disabled={rice < u.cost} onClick={() => buyUpgrade(u)}>
-                <span className="shop-icon" aria-hidden="true">{u.icon}</span><span className="shop-body"><span className="shop-name">{u.name}</span><span className="production">{u.desc}</span><span className="shop-desc">{u.flavor}</span></span><span className="shop-cost">{fmt(u.cost)} 粒</span>
+                <span className="shop-icon" aria-hidden="true">{u.icon}</span><span className="shop-body"><span className="shop-name">{u.name}</span><span className="production">{u.desc}</span></span><span className="shop-cost">{fmt(u.cost)} 粒</span>
               </button>)}
-              {collectedUpgrades.length > 0 && <details className="owned-upgrades"><summary>購入済みの強化 {collectedUpgrades.length} / {UPGRADES.length}</summary>{collectedUpgrades.map(u => <div key={u.id}><b>{u.name}</b><span>{u.desc}</span></div>)}</details>}
+              {collectedUpgrades.length > 0 && <details className="owned-upgrades"><summary>購入済みの強化 {collectedUpgrades.length} / {UPGRADES.length}</summary>{collectedUpgrades.map(u => <div key={u.id}><b>{u.name}</b><span>{u.desc}</span><small>{u.flavor}</small></div>)}</details>}
             </>}
           </>}
           {view === "collection" && <>
             <div className="subnav collection-nav" aria-label="図鑑の種類">{[["achievements", "実績", `${achCount}/${achievements.length}`], ["recipes", "料理", `${cookedCount}/${RECIPES.length}`], ["buildings", "施設"], ["regulars", "常連", `${regularCount}/${REGULARS.length}`], ["skins", "きせかえ"]].map(([id, label, count]) =>
               <button key={id} aria-pressed={collectionTab === id} className={collectionTab === id ? "selected" : ""} onClick={() => setCollectionTab(id)}>{label}{count && <span className="sub-count">{` ${count}`}</span>}</button>)}</div>
             {collectionTab === "achievements" ? <>
-              <div className="collection-stats"><span>{chapter.name}</span><span>累計 {fmt(totalRice)} 粒 · {fmt(clicks)} タップ</span></div>
+              <div className="collection-stats"><span>{chapter.name}</span><span>{game.rebirths ? `今年 ${fmt(totalRice)} 粒 · 通算 ${fmt(allTime)} 粒` : `累計 ${fmt(totalRice)} 粒`} · {fmt(clicks)} タップ</span></div>
               <button className="regular-summary" onClick={() => setCollectionTab("regulars")}><span>常連の応援 <b>全生産 +{Number(regularBonus.toFixed(2))}%</b></span><span>{waitingRegulars.length ? `${waitingRegulars.length}人が来ています ›` : nextRegular ? `実績あと${nextRegular.need - activeAchievements}個で次の常連 ›` : "常連を見る ›"}</span></button>
+              <button className="regular-summary rebirth-summary" aria-label="新米（転生）を開く" onClick={() => { setCollectionTab("shinmai"); setRebirthMessage(""); }}><span>新米 <b>{year}年目 · 種もみ {fmt(seeds)}粒</b></span><span>{rebirthReady ? `+${fmt(seedGain)}粒まけます ›` : "詳しく ›"}{firstRebirthReady && <span className="new-dot" aria-label="新米にできます" />}</span></button>
               <div className="ach-progress"><span style={{width:`${achCount / achievements.length * 100}%`}} /></div>
               <div className="filters" aria-label="実績の絞り込み">{[['all','すべて'],['todo','未達成'],['done','達成済み']].map(([id,label]) => <button key={id} aria-pressed={achFilter === id} onClick={() => setAchFilter(id)}>{label}</button>)}</div>
               {shownAchievements.length === 0 && <p className="empty-state">これから最初のひとつを。</p>}
@@ -917,13 +987,12 @@ function OnigiriClicker() {
               </div> : <>
               {!selectedRecipe && <>
                 <button className="outing-summary" aria-label="おすそわけを開く" onClick={openOutings}><b>おすそわけ</b><span>絵はがき {cardCount}/{totalCards} ›</span></button>
-                <details className="plate-picker"><summary>お皿：{plate.name}</summary><div>{PLATES.map(p => <button key={p.id} aria-pressed={p.id === plate.id} disabled={cardCount < p.need} onClick={() => setGame(s => Game.selectPlate(s, p.id))}><span className={`plate-swatch ${p.id}`} style={{ background: PLATE_COLORS[p.id][0], borderColor: PLATE_COLORS[p.id][1] }} aria-hidden="true" /><span>{p.name}<small>{cardCount < p.need ? `絵はがき ${p.need}枚` : p.id === plate.id ? "使用中" : "使う"}</small></span></button>)}</div></details>
+                <details className="plate-picker"><summary>お皿：{plate.name}</summary><div>{PLATES.map(p => <button key={p.id} aria-pressed={p.id === plate.id} disabled={cardCount < p.need} onClick={() => setGame(s => Game.selectPlate(s, p.id))}><span className={`plate-swatch ${p.id}`} style={{ background: PLATE_COLORS[p.id][0], borderColor: PLATE_COLORS[p.id][1] }} aria-hidden="true" /><span>{p.name}<small>{cardCount < p.need ? `絵はがき ${p.need}枚` : p.id === plate.id ? "✓" : ""}</small></span></button>)}</div></details>
               </>}
               {selectedRecipe ? <div className="kitchen">
                 <div className="kitchen-heading"><button onClick={() => setKitchen(null)}>‹ 料理一覧</button><h2>{selectedRecipe.name}</h2><span>{kitchen.step === 3 ? "完成" : `${kitchen.step + 1}/3`}</span></div>
                 <MealArt id={selectedRecipe.id} stage={kitchen.step} decoration={kitchen.decoration} plate={plate.id} />
                 {kitchen.step < 3 ? <>
-                  <p className="recipe-cost">完成時に {fmt(selectedRecipe.cost)} 粒使う</p>
                   {kitchen.step < 2 ? <button className="cook-action" onClick={() => setKitchen(k => ({ ...k, step: Math.min(kitchen.step + 1, 2) }))}>{MEAL_STEPS[selectedRecipe.id][kitchen.step]}</button> : <button className="cook-action" disabled={rice < selectedRecipe.cost} onClick={() => {
                     let cooked = false;
                     setGame(s => {
@@ -947,12 +1016,33 @@ function OnigiriClicker() {
                 const known = Game.recipeUnlocked(game, r.id), done = recipes[r.id];
                 return <div className={`recipe-card ${done ? "cooked" : ""}`} key={r.id}>
                   <MealArt id={r.id} stage={3} plate={plate.id} />
-                  <div><h2>{r.name}</h2><p className="recipe-cost">{done ? "✓ 図鑑に記録済み" : known ? `試作に使う米 ${fmt(r.cost)} 粒` : r.hint}</p>
+                  <div><h2>{r.name}</h2><p className="recipe-cost">{done ? "✓ 図鑑に記録済み" : known ? `${fmt(r.cost)} 粒` : r.hint}</p>
                   <button aria-label={`${r.name}${done ? "を見る" : "を作る"}`} disabled={!known} onClick={() => setKitchen({ id: r.id, step: done ? 3 : 0, diner: 0, decoration: 0 })}>{done ? "料理を見る" : known ? "作ってみる" : "未解放"}</button></div>
                 </div>;
               })}
               </>}
-            </> : collectionTab === "regulars" ? <>
+            </> : collectionTab === "shinmai" ? <div className="rebirth-panel">
+              <div className="outing-heading"><button onClick={() => { setCollectionTab("achievements"); setRebirthConfirm(false); }}>‹ 実績</button><span>{year}年目</span></div>
+              <h2 className="outing-title">新米の季節</h2>
+              <div className="regular-total"><span>種もみ {fmt(seeds)}粒</span><b>全生産 ×{fmtTimes(Game.seedMultiplier(game))}</b></div>
+              {rebirthReady ? <p className="collection-reward">今なら種もみ +{fmt(seedGain)}粒 → 全生産 ×{fmtTimes(Game.seedMultiplier(rebirthPreview))}</p>
+                : totalRice < Game.REBIRTH_YEAR_RICE ? <p className="recipe-cost">今年の累計1兆粒で新米にできます（あと {fmt(Math.ceil(Game.REBIRTH_YEAR_RICE - totalRice))} 粒）</p>
+                : <p className="recipe-cost">次の種もみまで 通算あと {fmt(Math.ceil(nextSeedRice))} 粒</p>}
+              {rebirthReady && <p className="recipe-cost">もう1粒増えるまで あと {fmt(Math.ceil(nextSeedRice))} 粒</p>}
+              <ul className="heirlooms" aria-label="種もみで受け継ぐもの">{Game.HEIRLOOMS.map(h => <li key={h.id} className={seeds >= h.seeds ? "done" : ""}><b>{h.name}</b><span>{h.desc}</span><small>{seeds >= h.seeds ? "✓ 受け継ぎ中" : `種もみ ${fmt(h.seeds)}粒で`}</small></li>)}</ul>
+              {rebirthMessage && <p className="save-message" role="status">{rebirthMessage}</p>}
+              {rebirthConfirm && rebirthPreview ? <div className="rebirth-confirm" role="group" aria-label="新米の確認">
+                <h3>新米にしますか？</h3>
+                <dl>
+                  <dt>もらえる</dt><dd>種もみ +{fmt(seedGain)}粒（合計 {fmt(Game.seedCount(rebirthPreview))}粒・全生産 ×{fmtTimes(Game.seedMultiplier(game))} → ×{fmtTimes(Game.seedMultiplier(rebirthPreview))}）{Game.HEIRLOOMS.filter(h => seeds < h.seeds && Game.seedCount(rebirthPreview) >= h.seeds).map(h => `・${h.name}`).join("")}</dd>
+                  <dt>最初に戻る</dt><dd>米粒 {fmt(rice)}粒・施設 {fmt(Object.values(owned).reduce((a, n) => a + n, 0))}個・ショップの強化 {collectedUpgrades.length - Object.keys(rebirthPreview.upgrades).length}個・今年の累計と章</dd>
+                  <dt>残る</dt><dd>実績・料理・絵はがき・お皿・きせかえ・常連・握った回数・金のおむすびの記録{UPGRADES.some(u => u.kind !== "regular" && rebirthPreview.upgrades[u.id]) && `・持ち越す強化 ${UPGRADES.filter(u => u.kind !== "regular" && rebirthPreview.upgrades[u.id]).length}個`}</dd>
+                </dl>
+                {activeBoosts.length > 0 && <p className="recipe-cost">発動中の金のおむすびの効果は終わります。</p>}
+                <p className="panel-help">実行前のデータをこの端末に1件控え、セーブ画面から保存・復元できます。控えを保存できない場合は新米にしません。</p>
+                <div className="craft-row"><button className="craft-btn" onClick={() => setRebirthConfirm(false)}>やめる</button><button className="craft-btn rebirth-go" onClick={startNewYear}>新米にする · 種もみ +{fmt(seedGain)}</button></div>
+              </div> : <button className="craft-btn file-load" disabled={!rebirthReady} onClick={() => { setRebirthConfirm(true); setRebirthMessage(""); }}>新米にする…</button>}
+            </div> : collectionTab === "regulars" ? <>
               <div className="regular-total"><span>実績 {activeAchievements}個</span><b>全生産 +{Number(regularBonus.toFixed(2))}%</b></div>
               {REGULARS.map(r => {
                 const welcomed = !!upgrades[r.id], known = welcomed || activeAchievements >= r.need;
@@ -965,18 +1055,16 @@ function OnigiriClicker() {
                 </div>;
               })}
             </> : collectionTab === "skins" ? <>
-              <p className="panel-help">着替えると能力も変わる。購入済みなら何度でも。</p>
-              <div className="skin-grid">{SKINS.map(s => <button key={s.id} className={`skin-card ${activeSkin === s.id ? "active" : ""}`} aria-pressed={activeSkin === s.id} disabled={!skinsOwned[s.id] && rice < s.cost} onClick={() => buySkin(s)}>
-                <div className="skin-preview" aria-hidden="true"><OnigiriSVG skin={s} /></div><div className="skin-name">{s.name}</div><div className="skin-ab">{s.ability}</div><div className="skin-price">{activeSkin === s.id ? "着用中" : skinsOwned[s.id] ? "着替える" : `${fmt(s.cost)} 粒`}</div>
+              <div className="skin-grid">{SKINS.map(s => <button key={s.id} className={`skin-card ${activeSkin === s.id ? "active" : ""}`} aria-pressed={activeSkin === s.id} disabled={!skinsOwned[s.id] && (rice < s.cost || seeds < (s.seeds || 0))} onClick={() => buySkin(s)}>
+                <div className="skin-preview" aria-hidden="true"><OnigiriSVG skin={s} /></div><div className="skin-name">{s.name}</div><div className="skin-ab">{s.ability}</div><div className="skin-price">{activeSkin === s.id ? "着用中" : skinsOwned[s.id] ? "着替える" : s.seeds ? (seeds < s.seeds ? `種もみ ${fmt(s.seeds)}粒で` : "着てみる") : `${fmt(s.cost)} 粒`}</div>
               </button>)}</div>
             </> : <>
               {BUILDINGS.every(b => !owned[b.id]) && <p className="empty-state">ショップで最初のおばあちゃんを迎えよう。</p>}
-              {BUILDINGS.filter(b => owned[b.id]).map(b => <div key={b.id} className="building-row"><div className="building-head"><b>{b.name}</b><span>×{owned[b.id]}</span></div><p className="shop-desc">{b.desc}</p><div className="building-icons" aria-hidden="true">{b.icon.repeat(Math.min(owned[b.id], 16))}{owned[b.id] > 16 && ` +${owned[b.id]-16}`}</div><div className="production">合計 毎秒 {fmtCps(b.cps * owned[b.id] * Game.buildingMultiplier(game,b.id) * Game.skinCps(activeSkin) * Game.regularMultiplier(game))} 粒</div></div>)}
+              {BUILDINGS.filter(b => owned[b.id]).map(b => <div key={b.id} className="building-row"><div className="building-head"><b>{b.name}</b><span>×{owned[b.id]}</span></div><p className="shop-desc">{b.desc}</p><div className="building-icons" aria-hidden="true">{b.icon.repeat(Math.min(owned[b.id], 16))}{owned[b.id] > 16 && ` +${owned[b.id]-16}`}</div><div className="production">合計 毎秒 {fmtCps(Game.buildingRate(game, b) * owned[b.id])} 粒</div></div>)}
             </>}
           </>}
           {view === "save" && <>
-            <div className="save-status"><b>{storageError ? "自動保存を確認してください" : "この端末に自動保存"}</b><span>{lastSaved ? `最終保存 ${new Date(lastSaved).toLocaleTimeString('ja-JP')}` : "5秒ごと・画面を閉じるときに保存"}</span></div>
-            <p className="panel-help">閉じている間も最大4時間、生産が進みます。バックアップ・別端末への引き継ぎはこちら。</p>
+            <div className="save-status"><b>{storageError ? "自動保存を確認してください" : "この端末に自動保存"}</b><span>{lastSaved ? `最終保存 ${new Date(lastSaved).toLocaleTimeString('ja-JP')}` : ""}</span></div>
             <div className="craft-row"><button className="craft-btn" onClick={copySave}>{blocked.current ? "保護中コードをコピー" : "最新コードをコピー"}</button><button className="craft-btn" onClick={() => downloadSave(makeSaveCode())}>ファイルに保存</button></div>
             <button className="craft-btn file-load" disabled={readingFile} onClick={() => fileInputRef.current?.click()}>{readingFile ? "読み込み中…" : "ファイルを読み込む"}</button>
             <input ref={fileInputRef} type="file" accept=".txt,text/plain" aria-label="セーブファイル" hidden onChange={importFile} />
@@ -987,14 +1075,19 @@ function OnigiriClicker() {
               <textarea ref={saveCodeRef} id="save-code" className="save-area" value={saveText} onChange={e => setSaveText(e.target.value)} placeholder="保存してあるコードを貼り付ける" spellCheck="false" />
               <div className="craft-row"><button className="craft-btn" onClick={() => { if (makeSaveCode()) setSaveMessage(blocked.current ? "保護中のコードを表示しました。" : "最新のコードを表示しました。"); }}>{blocked.current ? "保護中コードを表示" : "最新コードを表示"}</button><button className="craft-btn" disabled={!saveText} onClick={() => { saveCodeRef.current?.focus(); saveCodeRef.current?.select(); saveCodeRef.current?.setSelectionRange(0, saveText.length); }}>全選択</button></div>
               <button className="craft-btn file-load" disabled={!saveText.trim() || readingFile} onClick={() => importSave(saveText)}>コードを読み込む</button>
-              {importBackup && <div className="import-backup"><p className="panel-help">直前に読み込む前のデータを1件保管しています。戻したいときは保存して読み込めます。</p><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
+              {importBackup && <div className="import-backup"><button className="craft-btn file-load" onClick={() => downloadSave(importBackup, "omusubi-before-import")}>読み込み前のデータを保存</button></div>}
             </details>
-            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>料理の「おすそわけ」は、施設を育てると届け先が増えます。作った料理を米粒で届けると、場所と料理ごとに1枚、全27枚の絵はがきが届きます。3・12・27枚でお皿を獲得。お皿は見た目だけが変わり、読み返しや付け替えは無料です。期限はありません。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
+            {rebirthBackup && <div className="import-backup rebirth-backup"><p className="panel-help">戻すと今の進行は「読み込み前のデータ」に控えます。</p>
+              <button className="craft-btn file-load" onClick={() => downloadSave(rebirthBackup, "omusubi-before-rebirth")}>新米前のデータを保存</button>
+              {restoreConfirm ? <div className="craft-row"><button className="craft-btn" onClick={() => setRestoreConfirm(false)}>やめる</button><button className="craft-btn" onClick={() => { setRestoreConfirm(false); importSave(rebirthBackup); }}>新米前に戻す</button></div>
+                : <button className="craft-btn file-load" onClick={() => setRestoreConfirm(true)}>新米前に戻す…</button>}
+            </div>}
+            <details className="save-help"><summary>遊び方・このゲームについて</summary><p>おむすびを握って米粒を集め、施設を買うと自動生産。強化でさらに増えます。閉じている間も最大4時間、生産が進みます。きせかえは能力も変わり、購入済みなら何度でも着替えられます。金のおむすびは米粒の贈り物、30秒間の生産7倍、ときどき13秒間のクリック777倍！</p><p>具材は基本のクリックを強くし、焼き鮭からは毎秒生産に応じた米粒も1クリックへ追加します。施設を組み合わせてそろえると、両方を強くする連携がショップに解放されます。</p><p>図鑑の「料理」では集めた米粒でレシピを試作できます。盛り付けを進めて「完成させる」を押した時だけ、初回の米粒を使います。完成品を見たり、常連の感想を聞いたりするのは無料。料理は売らずに図鑑へ残ります。必要な粒数はゲーム内の値で、実際の料理の分量とは異なります。</p><p>料理の「おすそわけ」は、施設を育てると届け先が増えます。作った料理を米粒で届けると、場所と料理ごとに1枚、全27枚の絵はがきが届きます。3・12・27枚でお皿を獲得。お皿は見た目だけが変わり、読み返しや付け替えは無料です。期限はありません。</p><p>実績を8・20・35・50個集めると、図鑑の「常連」にお客さんが登場します。一度迎えると、実績の数に応じて全生産をずっと応援。常連同士の応援は足し算で、旧工房の記念実績は対象外です。</p><p>神の手は発動時のクリック力が基準です。効果中に買った施設や強化は、通常のクリックや次の神の手に反映されます。具材と「指」の生産連動分には、重なった炊飯祭りの7倍も乗ります。同じ効果を取ると残り時間が更新されます。</p><p>金をつかまえて15回続けて神の手が出なければ、次は必ず神の手。不発の回数も保存されます。金を7・27・77回つかまえると金専用の強化が解放され、保温ジャーで神の手は26秒になります。一時効果は再読み込み・セーブの復元で終了します。</p><p>図鑑の実績にある「新米」では、今年の累計が1兆粒をこえると来年をはじめられます。通算でとれた米粒に応じて種もみがたまり（通算の立方根、10億粒で1粒）、全生産をずっと強くします。種もみが10倍になると効果は約2.5倍。米粒・施設・ショップの強化と今年の累計は最初に戻り、実績・料理・絵はがき・お皿・きせかえ・常連・握った回数・金のおむすびの記録は残ります。種もみ10・1,000・10万粒で金・具材・指と連携の強化を持ち越し、100万粒で「新米むすび」を着られます。種もみは使ったり売ったりしません。すぐ新米にしても種もみは少しだけなので、伸びがゆるやかになってからが目安です。実行前のデータは1件控え、セーブ画面から戻せます。</p><p>旧版のコードも読み込めます。旧工房の在庫は最高売値で米粒に、契約農家は購入費用に戻します。取得した実績も残ります。自動保存はこのブラウザ・このサイト専用です。</p><p>Respect for <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank" rel="noopener noreferrer">Cookie Clicker</a> — by Orteil &amp; Opti。クリック、生産、強化、金のボーナスの仕組みに影響を受けた非公式のおむすびゲームです。</p></details>
           </>}
           </div>}
         </section>
       </main>
-      <footer className="footer-stats">累計 {fmt(totalRice)} 粒 <span>·</span> {clicks.toLocaleString('ja-JP')} 回握った <span>·</span> 実績 {achCount}/{achievements.length}</footer>
+      <footer className="footer-stats">{game.rebirths ? `${year}年目 · 今年 ${fmt(totalRice)} 粒` : `累計 ${fmt(totalRice)} 粒`} <span>·</span> {clicks.toLocaleString('ja-JP')} 回握った <span>·</span> 実績 {achCount}/{achievements.length}</footer>
       <div className="toast-area" role="status" aria-live="polite">{toasts.map(t => <div key={t.id} className="toast">{t.msg}</div>)}</div>
     </div>
   );

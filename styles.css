@@ -85,7 +85,7 @@ button { color:inherit; }
 .owned-upgrades,.save-help { padding:12px; border-top:1px solid var(--line); font-size:13px; margin-top:16px; }
 summary { cursor:pointer; padding:8px 0; min-height:44px; }
 .owned-upgrades > div { display:flex; flex-direction:column; gap:3px; border-top:1px solid #46577277; padding:9px 0; }
-.owned-upgrades > div span { color:var(--muted); font-size:12px; }
+.owned-upgrades > div span, .owned-upgrades > div small { color:var(--muted); font-size:12px; }
 .ach-progress { height:4px; background:#3a4c64; border-radius:8px; margin:4px 0 10px; overflow:hidden; }
 .ach-progress > span { display:block; height:100%; background:var(--gold); }
 .filters { display:flex; gap:6px; margin-bottom:12px; }
@@ -183,6 +183,21 @@ summary { cursor:pointer; padding:8px 0; min-height:44px; }
 .outing-heading button { background:transparent; border-color:var(--line); }
 .outing-heading span { font-size:13px; color:var(--gold); }
 .collection-reward { margin:8px 0 12px; color:var(--gold); font-size:13px; }
+.rebirth-summary { border-color:#b7a46a; background:#3a3d38; }
+.rebirth-panel .regular-total { margin-bottom:6px; }
+.heirlooms { list-style:none; margin:4px 0 14px; padding:0; }
+.heirlooms li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 10px; padding:8px 10px; margin-bottom:6px; border:1px solid var(--line); border-radius:8px; background:#26364b; font-size:13px; }
+.heirlooms li span { grid-column:1; color:var(--muted); font-size:12px; }
+.heirlooms li small { grid-column:2; grid-row:1 / span 2; align-self:center; color:var(--muted); font-size:12px; }
+.heirlooms li.done { border-color:#8eae9e; background:#2b403f; }
+.heirlooms li.done small { color:var(--gold); }
+.rebirth-confirm { padding:12px; border:1px solid var(--gold); border-radius:10px; background:#2e3a3f; }
+.rebirth-confirm h3 { margin:0 0 8px; font-size:15px; }
+.rebirth-confirm dl { margin:0 0 8px; font-size:13px; line-height:1.7; }
+.rebirth-confirm dt { color:var(--gold); font-weight:bold; }
+.rebirth-confirm dd { margin:0 0 6px; }
+.rebirth-go { border-color:var(--gold); color:var(--gold); }
+.rebirth-backup { margin-top:12px; }
 .postcard-art { display:block; width:100%; height:auto; }
 .outing-card { display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:8px; margin-bottom:8px; border:1px solid var(--line); border-radius:10px; background:#29394e; }
 .outing-card > .postcard-art { width:90px; flex-shrink:0; }

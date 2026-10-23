@@ -8,6 +8,8 @@ test('the deployed Babel preset produces a runnable classic React script', async
   const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
   const babelUrl = html.match(/src="(https:[^"]+babel\.min\.js)"/)[1];
   assert.match(babelUrl, /standalone@\d+\.\d+\.\d+\//);
+  // Bump together so no cached old game.js meets a new app.jsx (rebirth fields).
+  assert.deepEqual(html.match(/\.\/(styles\.css|game\.js|app\.jsx)\?v=\d+/g), ['./styles.css?v=12', './game.js?v=12', './app.jsx?v=12']);
   const response = await fetch(babelUrl);
   assert.equal(response.ok, true, `Babel download: ${response.status}`);
   const compiler = vm.createContext({});

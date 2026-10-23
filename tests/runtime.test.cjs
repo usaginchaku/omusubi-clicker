@@ -39,6 +39,9 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
   const timeouts = new Map();
   const listeners = new Map();
   const storage = new Map([[storageKey, options.storedCode ?? Game.encodeSave(initialState)]]);
+  // Keys listed here throw on write (quota) or silently store damaged bytes.
+  const failing = new Set(options.failKeys || []);
+  const corrupting = new Set(options.corruptKeys || []);
   const clipboard = [];
   const downloads = [];
   const objectUrls = new Map();
@@ -98,7 +101,10 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
     window: { ...eventTarget, matchMedia: options.wide ? () => ({ matches: true, addEventListener() {}, removeEventListener() {} }) : undefined },
     localStorage: {
       getItem: key => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, value),
+      setItem: (key, value) => {
+        if (failing.has(key)) throw Error('quota');
+        storage.set(key, corrupting.has(key) ? value.slice(0, -1) : value);
+      },
     },
     setInterval(callback, delay) { const id = ++timerId; intervals.set(id, { callback, delay }); return id; },
     clearInterval: id => intervals.delete(id),
@@ -199,6 +205,9 @@ function createRuntime(code, initialState, random = Math.random, options = {}) {
       return text(caption);
     },
     saved: () => Game.decodeSave(storage.get(storageKey)).state,
+    stored: key => storage.get(key),
+    failStorage(key, on = true) { if (on) failing.add(key); else failing.delete(key); },
+    otherTabSaves() { for (const callback of listeners.get('storage') || []) callback({ key: storageKey, newValue: 'OMSB1|other-tab' }); flush(); },
     resumed: () => vm.runInContext('loadInitialGame().state', context),
   };
 }
@@ -591,4 +600,144 @@ test('wide screens keep the shop beside the onigiri without a separate tap tab',
   assert.ok(runtime.button('施設'));
   runtime.clickOnigiri(); runtime.pagehide();
   assert.equal(runtime.saved().rice,101);
+});
+
+const rebirthKey = storageKey + '-before-rebirth';
+const harvestGame = () => Game.awardAchievements({ ...Game.newGame(), rice: 4e11, totalRice: 1e12, clicks: 300, goldenClicks: 7, goldenMisses: 3, savedAt: 1000,
+  owned: { obaachan: 10, suihanki: 10 }, upgrades: { shio: true, lucky_cat: true, obaachan_tier0: true, regular_cat: true },
+  recipes: { shio_musubi: true }, souvenirs: { 'engawa:shio_musubi': true }, skinsOwned: { plain: true, panda: true }, activeSkin: 'panda' });
+async function openRebirth(runtime) {
+  await runtime.press('図鑑');
+  if (runtime.button('‹ 実績')) await runtime.press('‹ 実績');
+  await runtime.pressAria('新米（転生）を開く');
+}
+
+test('rebirth shows its reward and losses, backs up first, and a double tap before render resets only once', async () => {
+  const runtime = createRuntime(await loadCompiledApp(), harvestGame());
+  await openRebirth(runtime);
+  assert.match(runtime.screenText(), /今なら種もみ \+10粒 → 全生産 ×1\.5/);
+  await runtime.press('新米にする…');
+  const screen = runtime.screenText();
+  assert.match(screen, /もらえる.*種もみ \+10粒.*金の段取り/);
+  assert.match(screen, /最初に戻る.*米粒 4000億粒・施設 20個・ショップの強化 2個/);
+  assert.match(screen, /残る.*実績・料理・絵はがき・お皿・きせかえ・常連.*持ち越す強化 1個/);
+  runtime.clickOnigiri(); // before React renders: belongs to the backed-up year
+  const go = runtime.button('新米にする · 種もみ +10');
+  go.props.onClick(); go.props.onClick();
+  runtime.pagehide();
+  const year2 = runtime.saved();
+  assert.equal(year2.rebirths, 1);
+  assert.equal(Game.seedCount(year2), 10);
+  assert.equal(year2.pastRice, 1e12 + Game.clickPower(harvestGame()));
+  assert.deepEqual([year2.rice, year2.totalRice, year2.owned], [0, 0, {}]);
+  assert.deepEqual(year2.upgrades, { lucky_cat: true, regular_cat: true });
+  assert.equal(year2.clicks, 301);
+  assert.equal(year2.goldenMisses, 3, 'the 777x guarantee keeps counting');
+  assert.equal(year2.activeSkin, 'panda');
+  assert.equal(year2.souvenirs['engawa:shio_musubi'], true);
+  assert.equal(year2.unlocked.rebirth1, true);
+  const backup = Game.decodeSave(runtime.stored(rebirthKey)).state;
+  assert.equal(backup.rebirths, 0);
+  assert.equal(backup.clicks, 301);
+  runtime.flush();
+  assert.match(runtime.toasts(), /新米の季節！ 種もみ \+10粒/);
+  assert.match(runtime.screenText(), /2年目が始まりました/);
+  assert.equal(runtime.button('新米にする…').props.disabled, true);
+  assert.match(runtime.screenText(), /今年の累計1兆粒で新米にできます/);
+  assert.equal(runtime.resumed().rebirths, 1, 'reloading keeps the new year without another reward');
+  assert.equal(Game.canRebirth(runtime.resumed()), false);
+});
+
+test('a backup that cannot be stored or read back cancels the rebirth without changing progress', async () => {
+  for (const options of [{ failKeys: [rebirthKey] }, { corruptKeys: [rebirthKey] }, { failKeys: [storageKey] }]) {
+    const runtime = createRuntime(await loadCompiledApp(), harvestGame(), Math.random, options);
+    await openRebirth(runtime);
+    await runtime.press('新米にする…');
+    await runtime.press('新米にする · 種もみ +10');
+    assert.match(runtime.screenText(), /新米にしませんでした。今の進行はそのままです/);
+    assert.ok(runtime.button('新米にする…'), 'the confirmation closes');
+    runtime.failStorage(storageKey, false);
+    runtime.pagehide();
+    assert.equal(runtime.saved().rebirths, 0);
+    assert.equal(runtime.saved().owned.obaachan, 10);
+    assert.equal(runtime.saved().totalRice, 1e12);
+  }
+});
+
+test('restoring the pre-rebirth backup returns the old year and rebirthing again yields the same seeds', async () => {
+  const runtime = createRuntime(await loadCompiledApp(), harvestGame());
+  await openRebirth(runtime);
+  await runtime.press('新米にする…');
+  await runtime.press('新米にする · 種もみ +10');
+  runtime.advance(60000); runtime.clickOnigiri();
+  await runtime.press('セーブ');
+  await runtime.press('新米前のデータを保存');
+  assert.equal(Game.decodeSave(await runtime.downloads[0].blob.text()).state.rebirths, 0);
+  await runtime.press('新米前に戻す…');
+  await runtime.press('新米前に戻す');
+  runtime.pagehide();
+  assert.equal(runtime.saved().rebirths, 0);
+  assert.equal(runtime.saved().owned.obaachan, 10);
+  assert.equal(Game.decodeSave(runtime.importBackup()).state.rebirths, 1, 'the second year is kept as the pre-import data');
+  await openRebirth(runtime);
+  assert.doesNotMatch(runtime.screenText(), /年目が始まりました/, 'a restore clears the old rebirth notice');
+  await runtime.press('新米にする…');
+  await runtime.press('新米にする · 種もみ +10');
+  runtime.pagehide();
+  assert.equal(Game.seedCount(runtime.saved()), 10, 'restore and repeat cannot multiply seeds');
+});
+
+test('rebirth ends active golden effects, warns first, and is refused while another tab owns the save', async () => {
+  const runtime = createRuntime(await loadCompiledApp(), harvestGame(), () => .96);
+  runtime.spawnGolden(); runtime.claimGolden(); runtime.flush();
+  assert.match(runtime.caption(), /クリック ×777/);
+  await openRebirth(runtime);
+  await runtime.press('新米にする…');
+  assert.match(runtime.screenText(), /発動中の金のおむすびの効果は終わります/);
+  await runtime.press('新米にする · 種もみ +10');
+  await runtime.press('握る');
+  assert.doesNotMatch(runtime.caption(), /×777/);
+  runtime.clickOnigiri(); runtime.pagehide();
+  assert.ok(Math.abs(runtime.saved().rice - 1.1) < 1e-9, 'the next click is an ordinary click (panda +10%)');
+
+  const other = createRuntime(await loadCompiledApp(), harvestGame());
+  await openRebirth(other);
+  await other.press('新米にする…');
+  other.otherTabSaves();
+  await other.press('新米にする · 種もみ +10');
+  assert.match(other.screenText(), /自動保存が停止中のため、新米にしませんでした/);
+  assert.equal(other.stored(rebirthKey), undefined);
+});
+
+test('the first chance is announced once and marked on the collection tab; shop rates include seeds', async () => {
+  // No waiting regular or new recipe, so the collection dot can only mean the rebirth.
+  const regulars = Object.fromEntries(Game.REGULARS.map(r => [r.id, true]));
+  const runtime = createRuntime(await loadCompiledApp(), { ...harvestGame(), totalRice: 1e12 - 5, rice: 0, owned: { obaachan: 10 }, upgrades: { shio: true, ...regulars }, unlocked: {} });
+  const dot = () => JSON.stringify(runtime.button('図鑑')).includes('図鑑に新しい発見があります');
+  assert.equal(dot(), false);
+  for (let i = 0; i < 5; i++) runtime.clickOnigiri();
+  runtime.flush();
+  assert.match(runtime.toasts(), /今年1兆粒！/);
+  assert.equal(dot(), true);
+  runtime.tick();
+  assert.equal((runtime.toasts().match(/今年1兆粒/g) || []).length, 1);
+  const seeded = Game.awardAchievements({ ...Game.newGame(), pastRice: Game.riceForSeeds(1000), rebirths: 1, rice: 100, totalRice: 100, owned: { obaachan: 2 }, savedAt: 1000 });
+  const year = createRuntime(await loadCompiledApp(), seeded);
+  await year.press('ショップ');
+  const rate = Game.buildingRate(seeded, Game.BUILDINGS[0]);
+  assert.ok(Math.abs(rate * 2 - Game.production(seeded)) < 1e-9);
+  assert.match(year.screenText(), new RegExp(`1人で毎秒 ${rate.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} 粒`));
+  await year.press('図鑑');
+  assert.match(year.screenText(), /今年 100 粒 · 通算/);
+});
+
+test('shop rows say it with layout: price, owned count and milestone progress, no repeated captions', async () => {
+  const runtime = createRuntime(await loadCompiledApp(), { ...Game.newGame(), rice: 1e6, totalRice: 1e6, owned: { obaachan: 3 } });
+  await runtime.press('ショップ');
+  const screen = runtime.screenText();
+  assert.match(screen, /所持 3/);
+  assert.match(screen, /3\/\d+/, 'milestone progress is a count, not a sentence');
+  assert.doesNotMatch(screen, /で次の強化解放|個購入|人購入/);
+  await runtime.press('図鑑'); await runtime.press('きせかえ');
+  assert.doesNotMatch(runtime.screenText(), /着替えると能力も変わる/);
 });

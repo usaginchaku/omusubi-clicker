@@ -215,6 +215,8 @@ SKINS.push(
   { id: "cosmos", name: "銀河むすび", cost: 5e10, ability: "毎秒生産 +25%", riceA: "#d9caff", riceB: "#8772d3", edge: "#6857a9", speck: "#fff4bf", nori: "#31315d", extra: "cosmos" },
 );
 SKINS.sort((a, b) => a.cost - b.cost);
+// Not for sale: worn once 1,000,000 seed rice are saved (see HEIRLOOMS).
+SKINS.push({ id: "shinmai", name: "新米むすび", cost: 0, seeds: 1000000, ability: "クリック力&毎秒生産 +20%", riceA: "#fffdf5", riceB: "#f1ead2", edge: "#d9cfae", speck: "#ffffff", nori: "#2d4434", extra: "shinmai" });
 
 // Old workshop achievements remain in imported collections, but new players never
 // receive impossible objectives for a system that no longer exists.
@@ -343,13 +345,70 @@ const CHAPTERS = [
 ];
 const chapterFor = total => CHAPTERS.filter(c => total >= c.at).at(-1);
 
+// Rice-total medals count every year; chapters and discoveries follow this year.
+for (const [id, at] of [["t100", 100], ["t1000", 1000], ["t1man", 1e4], ["t100man", 1e6], ["t1oku", 1e8], ["t1cho", 1e12], ["t1kei", 1e16], ["t1gai", 1e20]]) {
+  const a = ACHIEVEMENTS.find(x => x.id === id);
+  a.desc = a.desc.replace("累計", "通算");
+  a.cond = s => (s.pastRice || 0) + s.totalRice >= at;
+}
+ACHIEVEMENTS.push(
+  { id: "rebirth1", name: "新米の季節", desc: "はじめて新米にする", cond: s => s.rebirths >= 1 },
+  { id: "rebirth3", name: "三年目の土鍋", desc: "新米に3回する", cond: s => s.rebirths >= 3 },
+  { id: "rebirth10", name: "十年ものの釜", desc: "新米に10回する", cond: s => s.rebirths >= 10 },
+  ...[[10, "種もみ袋"], [1000, "種もみ蔵"], [100000, "種もみ山脈"], [1000000, "種もみ銀河"], [10000000, "まだ蒔ききれない"]].map(([n, name]) => ({
+    id: `seeds${n}`, name, desc: `種もみを${n.toLocaleString("ja-JP")}粒ためる`, cond: s => seedsFor(s.pastRice || 0) >= n })),
+);
+
+// ---------- 新米（転生） ----------
+// Seed rice is never spent or traded. Its count is derived from all rice ever
+// made, so rebirthing often cannot mint more than playing one long year.
+const SEED_UNIT = 1e9;
+const SEED_ROOT = 3;
+const allTimeRice = s => (s.pastRice || 0) + s.totalRice;
+const riceForSeeds = n => n ** SEED_ROOT * SEED_UNIT;
+// Correct the floating-point root so every threshold shown is exactly the one paid.
+function seedsFor(rice) {
+  const n = Math.floor((Math.max(0, rice) / SEED_UNIT) ** (1 / SEED_ROOT));
+  return riceForSeeds(n + 1) <= rice ? n + 1 : n > 0 && riceForSeeds(n) > rice ? n - 1 : n;
+}
+const seedCount = s => seedsFor(s.pastRice || 0);
+const rebirthGain = s => seedsFor(allTimeRice(s)) - seedCount(s);
+// A clear yearly gate (1兆, the "米の王" medal) instead of tempting 1-seed resets.
+const REBIRTH_YEAR_RICE = 1e12;
+const canRebirth = s => s.totalRice >= REBIRTH_YEAR_RICE && rebirthGain(s) >= 1;
+// 10x the seeds makes the bonus about 2.5x (seeds^0.4). In tools/prestige-sim.cjs
+// a linear bonus made later years collapse to 2-5 minutes, while a weaker one
+// left year 2 after a late first rebirth almost as long as year 1.
+const SEED_BONUS = 0.2;
+const SEED_POWER = 0.4;
+const seedMultiplier = s => 1 + seedCount(s) ** SEED_POWER * SEED_BONUS;
+// Each stage keeps more shop upgrades through a rebirth. Facility tiers are
+// never kept: carrying their x16 made every later year finish in minutes.
+const HEIRLOOMS = [
+  { id: "heir_golden", seeds: 10, kinds: ["golden"], name: "金の段取り", desc: "金のおむすびの強化3種を持ち越す" },
+  { id: "heir_click", seeds: 1000, kinds: ["click"], name: "味の記憶", desc: "具材の強化12種を持ち越す" },
+  { id: "heir_hand", seeds: 100000, kinds: ["finger", "pair"], name: "手の記憶", desc: "指の強化4種と連携の強化7種を持ち越す" },
+  { id: "heir_skin", seeds: 1000000, kinds: [], name: "新米むすび", desc: "きせかえ「新米むすび」を着られる" },
+];
+const keptKinds = s => ["regular", ...HEIRLOOMS.filter(h => seedCount(s) >= h.seeds).flatMap(h => h.kinds)];
+
 function newGame() {
   return { v: 2, rice: 0, totalRice: 0, clicks: 0, owned: {}, upgrades: {}, goldenClicks: 0, goldenMisses: 0,
     unlocked: {}, skinsOwned: { plain: true }, activeSkin: "plain", secret: false,
-    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [], recipes: {}, souvenirs: {}, activePlate: "plain" };
+    newsClicks: 0, savedAt: 0, crafted: 0, sold: 0, profit: 0, farmers: 0, inventory: [], recipes: {}, souvenirs: {}, activePlate: "plain",
+    pastRice: 0, rebirths: 0 };
 }
-const skinCps = id => ({ genmai: 1.1, gold: 1.15, cosmos: 1.25 }[id] || 1);
-const skinClick = id => ({ yukari: 1.15, gold: 1.15, panda: 1.1, neko: 1.2 }[id] || 1);
+// Returns the same object when nothing can be gained, so repeated taps are inert.
+function rebirth(s, now) {
+  if (!canRebirth(s)) return { state: s, gain: 0 };
+  const gain = rebirthGain(s);
+  const next = { ...s, rice: 0, totalRice: 0, owned: {}, pastRice: allTimeRice(s), rebirths: s.rebirths + 1, savedAt: now };
+  const kinds = keptKinds(next);
+  next.upgrades = Object.fromEntries(Object.entries(s.upgrades).filter(([id, owned]) => owned && kinds.includes(UPGRADES.find(u => u.id === id)?.kind)));
+  return { state: awardAchievements(next), gain };
+}
+const skinCps = id => ({ genmai: 1.1, gold: 1.15, cosmos: 1.25, shinmai: 1.2 }[id] || 1);
+const skinClick = id => ({ yukari: 1.15, gold: 1.15, panda: 1.1, neko: 1.2, shinmai: 1.2 }[id] || 1);
 const achievementCount = s => ACHIEVEMENTS.filter(a => !a.legacy && s.unlocked[a.id]).length;
 function regularMultiplier(s) {
   const support = REGULARS.reduce((sum, r) => sum + (s.upgrades[r.id] ? r.support : 0), 0);
@@ -358,8 +417,11 @@ function regularMultiplier(s) {
 function buildingMultiplier(s, id) {
   return UPGRADES.filter(u => (u.building === id || (u.kind === "pair" && id in u.requires)) && s.upgrades[u.id]).reduce((m, u) => m * u.mult, 1);
 }
+// Every facility's displayed rate and the real total share this multiplier.
+const globalMultiplier = s => skinCps(s.activeSkin) * regularMultiplier(s) * seedMultiplier(s);
+const buildingRate = (s, b) => b.cps * buildingMultiplier(s, b.id) * globalMultiplier(s);
 function production(s) {
-  return BUILDINGS.reduce((sum, b) => sum + b.cps * (s.owned[b.id] || 0) * buildingMultiplier(s, b.id), 0) * skinCps(s.activeSkin) * regularMultiplier(s);
+  return BUILDINGS.reduce((sum, b) => sum + b.cps * (s.owned[b.id] || 0) * buildingMultiplier(s, b.id), 0) * globalMultiplier(s);
 }
 function clickPower(s, productionBoost = 1) {
   const multiplier = UPGRADES.filter(u => u.kind === "click" && s.upgrades[u.id]).reduce((p, u) => p * u.mult, 1);
@@ -443,7 +505,7 @@ function buyUpgrade(s, id) {
 }
 function buySkin(s, id) {
   const skin = SKINS.find(x => x.id === id);
-  if (!skin || (!s.skinsOwned[id] && s.rice < skin.cost)) return s;
+  if (!skin || (!s.skinsOwned[id] && (s.rice < skin.cost || seedCount(s) < (skin.seeds || 0)))) return s;
   return { ...s, rice: s.rice - (s.skinsOwned[id] ? 0 : skin.cost), skinsOwned: { ...s.skinsOwned, [id]: true }, activeSkin: id };
 }
 function awardAchievements(s) {
@@ -463,13 +525,15 @@ function advanceProduction(s, since, now, boosts = {}) {
 function normalizeSave(data) {
   if (!data || typeof data !== "object" || ![1, 2].includes(data.v)) throw Error("version");
   const s = newGame();
-  for (const key of ["rice", "totalRice", "clicks", "goldenClicks", "goldenMisses", "newsClicks", "savedAt", "crafted", "sold", "profit", "farmers"]) {
+  for (const key of ["rice", "totalRice", "clicks", "goldenClicks", "goldenMisses", "newsClicks", "savedAt", "crafted", "sold", "profit", "farmers", "pastRice", "rebirths"]) {
     if (data[key] === undefined) continue;
     if (typeof data[key] !== "number" || !Number.isFinite(data[key]) || Math.abs(data[key]) > 1e100 || (key !== "profit" && data[key] < 0)) throw Error(key);
-    if (["clicks", "goldenClicks", "goldenMisses", "newsClicks", "crafted", "sold", "farmers", "savedAt"].includes(key) && !Number.isSafeInteger(data[key])) throw Error(key);
+    if (["clicks", "goldenClicks", "goldenMisses", "newsClicks", "crafted", "sold", "farmers", "savedAt", "rebirths"].includes(key) && !Number.isSafeInteger(data[key])) throw Error(key);
     s[key] = data[key];
   }
   if (s.goldenMisses > 15 || s.goldenMisses > s.goldenClicks) throw Error("goldenMisses");
+  // Every rebirth earned at least one seed, and a first year has no past rice.
+  if (s.rebirths > 1e6 || (s.rebirths === 0 ? s.pastRice !== 0 : seedsFor(s.pastRice) < s.rebirths)) throw Error("rebirths");
   for (const [key, ids, counts] of [
     ["owned", BUILDINGS.map(b => b.id), true], ["upgrades", UPGRADES.map(u => u.id)],
     ["unlocked", ACHIEVEMENTS.map(a => a.id)], ["skinsOwned", SKINS.map(x => x.id)], ["recipes", RECIPES.map(r => r.id)],
@@ -484,6 +548,7 @@ function normalizeSave(data) {
     }
   }
   s.skinsOwned.plain = true;
+  if (SKINS.some(x => x.seeds && s.skinsOwned[x.id] && seedCount(s) < x.seeds)) throw Error("skin");
   if (data.activeSkin !== undefined) {
     if (!SKINS.some(x => x.id === data.activeSkin) || !s.skinsOwned[data.activeSkin]) throw Error("skin");
     s.activeSkin = data.activeSkin;
@@ -530,6 +595,7 @@ function offlineProgress(s, now) {
 }
 
 return { BUILDINGS, UPGRADES, SKINS, ACHIEVEMENTS, REGULARS, PAIR_UPGRADES, RECIPES, recipeUnlocked, cookRecipe, OUTINGS, PLATES, postcardCount, outingUnlocked, sendMeal, selectPlate, CHAPTERS, PURCHASE_QUANTITIES, chapterFor, newGame, achievementCount, regularMultiplier,
+  SEED_UNIT, SEED_BONUS, HEIRLOOMS, REBIRTH_YEAR_RICE, canRebirth, allTimeRice, seedsFor, seedCount, rebirthGain, riceForSeeds, seedMultiplier, keptKinds, rebirth, globalMultiplier, buildingRate,
   production, clickPower, activeClickPower, GOLDEN_EFFECTS, goldenSettings, goldenDuration, goldenOutcome, boostMultiplier, addGoldenBoost, goldenHarvest, nextBuildingUpgrade, buildingMultiplier, skinCps, buildingPrice, upgradeAvailable,
   buyBuilding, buyUpgrade, buySkin, awardAchievements, advanceProduction, normalizeSave, encodeSave, decodeSave, offlineProgress };
 })();
